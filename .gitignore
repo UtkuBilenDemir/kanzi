@@ -1,0 +1,11 @@
+clippings.json
+zotero-index.json
+matches.json
+match-overrides.generated.json
+!match-overrides.json
+import-plan*.json
+*.import-plan.json
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
