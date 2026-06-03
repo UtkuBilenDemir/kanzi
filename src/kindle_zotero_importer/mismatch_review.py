@@ -36,6 +36,11 @@ SECTIONS = [
         "pdf-rects-not-found",
         "Needs improved PDF rectangle recovery after text/page match.",
     ),
+    (
+        "PDF Position Errors",
+        "pdf-position-error:",
+        "Inspect the PDF extraction command error, file validity, encryption, or permissions.",
+    ),
 ]
 
 
@@ -57,12 +62,13 @@ def build_mismatch_review(
         "",
     ]
     for heading, status, instruction in SECTIONS:
-        summaries = _title_summaries(by_status.get(status, []), match_by_title)
+        section_items = _items_for_status(by_status, status)
+        summaries = _title_summaries(section_items, match_by_title)
         lines += [
             f"## {heading}",
             "",
             f"Status: `{status}`",
-            f"Clippings: {len(by_status.get(status, []))}",
+            f"Clippings: {len(section_items)}",
             f"Unique titles: {len(summaries)}",
             f"Action: {instruction}",
             "",
@@ -73,6 +79,18 @@ def build_mismatch_review(
             lines += [f"_Showing first 30 of {len(summaries)} unique titles._", ""]
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _items_for_status(
+    by_status: dict[str, list[dict[str, Any]]], status: str
+) -> list[dict[str, Any]]:
+    if status.endswith(":"):
+        items: list[dict[str, Any]] = []
+        for item_status, status_items in by_status.items():
+            if item_status.startswith(status):
+                items.extend(status_items)
+        return items
+    return by_status.get(status, [])
 
 
 def _title_summaries(

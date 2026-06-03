@@ -24,6 +24,25 @@ def load_overrides(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         resolution = _clean_resolution(entry.get("resolution") or {})
         if not resolution:
             continue
+        if resolution.get("ignore") is True:
+            conflicting_fields = [
+                key
+                for key in (
+                    "citation_key",
+                    "zotero_key",
+                    "zotero_item_id",
+                    "attachment_key",
+                    "attachment_item_id",
+                )
+                if key in resolution
+            ]
+            if conflicting_fields:
+                raise OverrideError(
+                    f"ignore override for {clipping_title!r} cannot contain other resolution fields"
+                )
+            overrides[clipping_title] = resolution
+            continue
+
         item_fields = [
             key
             for key in ("citation_key", "zotero_key", "zotero_item_id")
@@ -70,20 +89,71 @@ def resolve_override(
 
 def generate_override_skeleton(match_report: dict[str, Any]) -> dict[str, Any]:
     overrides = []
-    for match in match_report.get("matches", []):
-        if match.get("status") == "matched":
+    matches = match_report.get("matches", [])
+    review_matches = [
+        match for match in matches if match.get("status") not in {"matched", "ignored"}
+    ]
+    resolved_overrides = [
+        match
+        for match in matches
+        if match.get("status") in {"matched", "ignored"} and match.get("override")
+    ]
+    sorted_matches = [
+        *sorted(review_matches, key=_review_sort_key),
+        *sorted(resolved_overrides, key=_review_sort_key),
+    ]
+
+    for match in sorted_matches:
+        if match.get("status") == "unmatched":
+            overrides.append(
+                {
+                    "clipping_title": match["clipping_title"],
+                    "review": {
+                        "status": match.get("status"),
+                        "clipping_count": match.get("clipping_count"),
+                    },
+                    "resolution": {
+                        "ignore": True,
+                        "citation_key": "",
+                    },
+                    "notes": "Default is to discard unmatched titles. To import, change ignore to false and fill citation_key, or replace it with zotero_key/zotero_item_id.",
+                    "candidates": match.get("candidates", []),
+                }
+            )
+            continue
+        if match.get("status") in {"matched", "ignored"}:
+            resolution = dict(match.get("override") or {})
+            if resolution.get("ignore") is True:
+                resolution.setdefault("citation_key", "")
+            overrides.append(
+                {
+                    "clipping_title": match["clipping_title"],
+                    "review": {
+                        "status": match.get("status"),
+                        "clipping_count": match.get("clipping_count"),
+                    },
+                    "resolution": resolution,
+                    "notes": "Already resolved by match-overrides.json. Kept at the end for review/audit.",
+                    "candidates": match.get("candidates", []),
+                }
+            )
             continue
         overrides.append(
             {
                 "clipping_title": match["clipping_title"],
+                "review": {
+                    "status": match.get("status"),
+                    "clipping_count": match.get("clipping_count"),
+                },
                 "resolution": {
+                    "ignore": False,
                     "citation_key": "",
                     "zotero_key": "",
                     "zotero_item_id": None,
                     "attachment_key": "",
                     "attachment_item_id": None,
                 },
-                "notes": "Fill exactly one item resolution field. Prefer citation_key when available. Optionally add attachment_key or attachment_item_id for ambiguous attachments.",
+                "notes": "Fill exactly one item resolution field. Prefer citation_key when available. Optionally add attachment_key or attachment_item_id for ambiguous attachments. Use ignore: true for works that should not be imported.",
                 "candidates": match.get("candidates", []),
             }
         )
@@ -91,9 +161,14 @@ def generate_override_skeleton(match_report: dict[str, Any]) -> dict[str, Any]:
     return {"format": OVERRIDES_FORMAT, "overrides": overrides}
 
 
+def _review_sort_key(match: dict[str, Any]) -> tuple[int, str]:
+    return -int(match.get("clipping_count") or 0), match["clipping_title"].casefold()
+
+
 def _clean_resolution(resolution: dict[str, Any]) -> dict[str, Any]:
     cleaned: dict[str, Any] = {}
     for key in (
+        "ignore",
         "citation_key",
         "zotero_key",
         "zotero_item_id",
@@ -104,6 +179,8 @@ def _clean_resolution(resolution: dict[str, Any]) -> dict[str, Any]:
         if value is None:
             continue
         if isinstance(value, str) and not value.strip():
+            continue
+        if key == "ignore" and value is not True:
             continue
         cleaned[key] = value.strip() if isinstance(value, str) else value
     return cleaned

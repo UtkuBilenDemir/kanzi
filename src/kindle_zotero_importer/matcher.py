@@ -27,6 +27,7 @@ class TitleMatch:
     clipping_title: str
     clipping_count: int
     candidates: list[MatchCandidate]
+    status_override: str | None = None
 
 
 def load_json(path: str) -> dict[str, Any]:
@@ -60,6 +61,7 @@ def build_match_report(
         "matched_title_count": status_counts["matched"],
         "ambiguous_title_count": status_counts["ambiguous"],
         "unmatched_title_count": status_counts["unmatched"],
+        "ignored_title_count": status_counts["ignored"],
         "matches": [
             {
                 "clipping_title": match.clipping_title,
@@ -89,6 +91,8 @@ def _match_title(
     override: dict[str, Any] | None = None,
 ) -> TitleMatch:
     if override:
+        if override.get("ignore") is True:
+            return TitleMatch(clipping_title, count, [], "ignored")
         item, reason = resolve_override(clipping_title, override, items)
         if item:
             return TitleMatch(clipping_title, count, [_candidate(item, 1.0, reason)])
@@ -193,13 +197,15 @@ def _normalize_title(value: str) -> str:
 
 
 def _status_counts(matches: list[TitleMatch]) -> dict[str, int]:
-    counts = {"matched": 0, "ambiguous": 0, "unmatched": 0}
+    counts = {"matched": 0, "ambiguous": 0, "unmatched": 0, "ignored": 0}
     for match in matches:
         counts[_match_status(match)] += 1
     return counts
 
 
 def _match_status(match: TitleMatch) -> str:
+    if match.status_override:
+        return match.status_override
     if not match.candidates:
         return "unmatched"
     if len(match.candidates) == 1:

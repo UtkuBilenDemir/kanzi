@@ -30,6 +30,8 @@ Generate reusable manual overrides for ambiguous/unmatched titles:
 python -m kindle_zotero_importer generate-overrides matches.json --output match-overrides.generated.json --pretty
 ```
 
+Generated overrides are designed for batch editing: unresolved titles are sorted by clipping count, unmatched titles default to `ignore: true`, and already-entered overrides are kept at the end as an audit trail. Replace `ignore` with a confirmed `citation_key`, `zotero_key`, or `zotero_item_id` to import a title instead of discarding it.
+
 Apply reviewed overrides:
 
 ```sh
@@ -37,6 +39,17 @@ python -m kindle_zotero_importer match clippings.json zotero-index.json --overri
 ```
 
 Keep confirmed mappings in `match-overrides.json`. The `match-overrides.generated.json` file is only a disposable review skeleton and can be regenerated from the current `matches.json` at any time.
+
+To permanently skip a Kindle title that should not be imported, add an ignore override:
+
+```json
+{
+  "clipping_title": "Example Kindle Title",
+  "resolution": {
+    "ignore": true
+  }
+}
+```
 
 If a matched Zotero item has multiple usable PDF/EPUB attachments, add the selected attachment to the same override entry:
 
@@ -81,6 +94,8 @@ python -m kindle_zotero_importer position-epub import-plan.json --output import-
 python -m kindle_zotero_importer position-pdf import-plan.epub.json --output import-plan.positioned.json --pretty
 python -m kindle_zotero_importer finalize import-plan.positioned.json --output import-plan.final.json --pretty
 ```
+
+PDF positioning uses Poppler tools (`pdftotext`, `pdftohtml`, `pdfinfo`). If a PDF permits viewing but blocks text copying, the importer retries extraction through a temporary `qpdf --decrypt` copy. The Zotero attachment itself is not modified.
 
 ## Safety Rule
 

@@ -58,6 +58,11 @@ def _plan_clipping(
         "problems": [],
     }
     match = matches_by_title.get(clipping["title"])
+    if match and match.get("status") == "ignored":
+        base["status"] = "ignored-title"
+        base["match"] = None
+        base["problems"] = ["ignored by match override"]
+        return base
     if not match or match.get("status") != "matched" or not match.get("candidates"):
         return base
 

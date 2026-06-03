@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import os
 import re
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 from typing import Any
 
@@ -30,9 +33,20 @@ def add_pdf_positions(plan: dict[str, Any]) -> dict[str, Any]:
     text_cache: dict[str, list[str]] = {}
     xml_cache: dict[tuple[str, int], PDFPageXML] = {}
     size_cache: dict[tuple[str, int], tuple[float, float]] = {}
+    decrypted_cache: dict[str, str] = {}
     positioned = []
-    for item in plan["items"]:
-        positioned.append(_position_item(item, text_cache, xml_cache, size_cache))
+    with tempfile.TemporaryDirectory(prefix="kindle-zotero-pdf-") as temp_dir:
+        for item in plan["items"]:
+            positioned.append(
+                _position_item(
+                    item,
+                    text_cache,
+                    xml_cache,
+                    size_cache,
+                    decrypted_cache,
+                    temp_dir,
+                )
+            )
 
     status_counts: dict[str, int] = {}
     for item in positioned:
@@ -49,6 +63,8 @@ def _position_item(
     text_cache: dict[str, list[str]],
     xml_cache: dict[tuple[str, int], PDFPageXML],
     size_cache: dict[tuple[str, int], tuple[float, float]],
+    decrypted_cache: dict[str, str],
+    temp_dir: str,
 ) -> dict[str, Any]:
     if item.get("status") != "ready-for-positioning":
         return item
@@ -63,16 +79,21 @@ def _position_item(
         return _with_problem(item, "pdf-position-missing-path")
 
     try:
-        text_pages = text_cache.setdefault(path, extract_pdf_text_pages(path))
+        text_pages, extraction_path = _text_pages_for_path(
+            path, text_cache, decrypted_cache, temp_dir
+        )
         page_index = find_pdf_text_page(
             text_pages, item["clipping"]["text"], item["clipping"].get("page")
         )
         if page_index is None:
             return _with_problem(item, "pdf-text-not-found")
         page_xml = xml_cache.setdefault(
-            (path, page_index), extract_pdf_page_xml(path, page_index)
+            (extraction_path, page_index),
+            extract_pdf_page_xml(extraction_path, page_index),
         )
-        position = find_pdf_rects(path, page_xml, item["clipping"]["text"], size_cache)
+        position = find_pdf_rects(
+            extraction_path, page_xml, item["clipping"]["text"], size_cache
+        )
     except Exception as error:  # noqa: BLE001 - preserve failure in plan, do not abort batch
         return _with_problem(item, f"pdf-position-error:{error}")
 
@@ -102,6 +123,52 @@ def extract_pdf_text_pages(path: str) -> list[str]:
         text=True,
     )
     return result.stdout.split("\f")
+
+
+def _text_pages_for_path(
+    path: str,
+    text_cache: dict[str, list[str]],
+    decrypted_cache: dict[str, str],
+    temp_dir: str,
+) -> tuple[list[str], str]:
+    if path in text_cache:
+        return text_cache[path], decrypted_cache.get(path, path)
+
+    try:
+        text_cache[path] = extract_pdf_text_pages(path)
+        return text_cache[path], path
+    except subprocess.CalledProcessError as error:
+        if not _is_pdf_permission_error(error):
+            raise
+
+    decrypted_path = _decrypted_pdf_path(path, decrypted_cache, temp_dir)
+    text_cache[path] = extract_pdf_text_pages(decrypted_path)
+    return text_cache[path], decrypted_path
+
+
+def _decrypted_pdf_path(
+    path: str, decrypted_cache: dict[str, str], temp_dir: str
+) -> str:
+    cached = decrypted_cache.get(path)
+    if cached:
+        return cached
+
+    digest = hashlib.sha256(path.encode("utf-8")).hexdigest()[:16]
+    base_name = os.path.splitext(os.path.basename(path))[0] or "document"
+    output_path = os.path.join(temp_dir, f"{base_name}.{digest}.decrypted.pdf")
+    subprocess.run(
+        ["qpdf", "--decrypt", path, output_path],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    decrypted_cache[path] = output_path
+    return output_path
+
+
+def _is_pdf_permission_error(error: subprocess.CalledProcessError) -> bool:
+    output = "\n".join(part for part in (error.stdout, error.stderr) if part)
+    return "Permission Error" in output and "Copying of text" in output
 
 
 def find_pdf_text_page(
