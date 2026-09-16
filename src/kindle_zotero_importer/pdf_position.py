@@ -4,10 +4,29 @@ from dataclasses import dataclass
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 from typing import Any
+
+
+_TOOL_PATHS = {
+    "pdftotext": ("/home/user/bin/pdftotext", "/opt/homebrew/bin/pdftotext"),
+    "pdftohtml": ("/home/user/bin/pdftohtml", "/opt/homebrew/bin/pdftohtml"),
+    "pdfinfo": ("/home/user/bin/pdfinfo", "/opt/homebrew/bin/pdfinfo"),
+    "qpdf": ("/home/user/bin/qpdf", "/opt/homebrew/bin/qpdf"),
+}
+
+
+def _tool(name: str) -> str:
+    resolved = shutil.which(name)
+    if resolved:
+        return resolved
+    for candidate in _TOOL_PATHS.get(name, ()):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return name
 
 
 @dataclass(frozen=True)
@@ -117,7 +136,7 @@ def _position_item(
 
 def extract_pdf_text_pages(path: str) -> list[str]:
     result = subprocess.run(
-        ["pdftotext", "-enc", "UTF-8", path, "-"],
+        [_tool("pdftotext"), "-enc", "UTF-8", path, "-"],
         check=True,
         capture_output=True,
         text=True,
@@ -157,7 +176,7 @@ def _decrypted_pdf_path(
     base_name = os.path.splitext(os.path.basename(path))[0] or "document"
     output_path = os.path.join(temp_dir, f"{base_name}.{digest}.decrypted.pdf")
     subprocess.run(
-        ["qpdf", "--decrypt", path, output_path],
+        [_tool("qpdf"), "--decrypt", path, output_path],
         check=True,
         capture_output=True,
         text=True,
@@ -194,7 +213,7 @@ def extract_pdf_page_xml(path: str, page_index: int) -> PDFPageXML:
     page_number = page_index + 1
     result = subprocess.run(
         [
-            "pdftohtml",
+            _tool("pdftohtml"),
             "-f",
             str(page_number),
             "-l",
@@ -302,7 +321,7 @@ def _pdf_page_size(
     path: str, page_number: int, fallback_width: float, fallback_height: float
 ) -> tuple[float, float]:
     result = subprocess.run(
-        ["pdfinfo", "-f", str(page_number), "-l", str(page_number), path],
+        [_tool("pdfinfo"), "-f", str(page_number), "-l", str(page_number), path],
         check=True,
         capture_output=True,
         text=True,

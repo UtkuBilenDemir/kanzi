@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 
@@ -20,10 +21,14 @@ def build_final_writer_plan(positioned_plan: dict[str, Any]) -> dict[str, Any]:
                 skipped.get("positioned-missing-writer-fields", 0) + 1
             )
             continue
+        clipping = item["clipping"]
         annotations.append(
             {
-                "clipping_id": item["clipping"]["id"],
-                "clipping_title": item["clipping"]["title"],
+                "clipping_id": clipping["id"],
+                "clipping_title": clipping["title"],
+                "clipping_added_on": clipping.get("added_on"),
+                "clipping_added_on_iso": clipping.get("added_on_iso"),
+                "integrated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "attachment_item_id": attachment["item_id"],
                 "attachment_key": attachment["key"],
                 "parent_item_id": item["zotero"]["parent_item_id"],
@@ -37,10 +42,21 @@ def build_final_writer_plan(positioned_plan: dict[str, Any]) -> dict[str, Any]:
                     "pageLabel": annotation.get("pageLabel") or "",
                     "sortIndex": annotation.get("sortIndex"),
                     "position": annotation["position"],
-                    "tags": annotation.get("tags") or [{"name": "kindle-import"}],
+                    "tags": [
+                        {"name": "kindle-import"},
+                        {"name": f"kindle-id:{clipping['id']}"},
+                    ],
                 },
             }
         )
+
+    annotations.sort(
+        key=lambda entry: (
+            entry.get("attachment_item_id") or 0,
+            entry["annotation"].get("sortIndex") or "",
+            entry.get("clipping_id") or "",
+        )
+    )
 
     return {
         "format": FINAL_FORMAT,

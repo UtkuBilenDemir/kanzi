@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
 import posixpath
-import re
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import Any
@@ -65,8 +64,8 @@ def _position_item(
 
     updated = dict(item)
     annotation = dict(updated["annotation"])
-    annotation["position"] = position
-    annotation["sortIndex"] = _epub_sort_index(position["value"])
+    annotation["position"] = position["selector"]
+    annotation["sortIndex"] = position["sortIndex"]
     updated["annotation"] = annotation
     updated["status"] = "positioned"
     return updated
@@ -97,7 +96,7 @@ def extract_epub_text_nodes(path: str) -> list[TextNode]:
         return nodes
 
 
-def find_epub_cfi(text_nodes: list[TextNode], quote: str) -> dict[str, str] | None:
+def find_epub_cfi(text_nodes: list[TextNode], quote: str) -> dict[str, Any] | None:
     haystack = " ".join(node.text for node in text_nodes)
     normalized_haystack, haystack_map = _normalize_with_map(haystack)
     normalized_quote, _ = _normalize_with_map(quote)
@@ -134,9 +133,12 @@ def find_epub_cfi(text_nodes: list[TextNode], quote: str) -> dict[str, str] | No
             f"{end_node.cfi_parent_path}/{end_node.text_step}:{end_offset})"
         )
     return {
-        "type": "FragmentSelector",
-        "conformsTo": "http://www.idpf.org/epub/linking/cfi/epub-cfi.html",
-        "value": value,
+        "selector": {
+            "type": "FragmentSelector",
+            "conformsTo": "http://www.idpf.org/epub/linking/cfi/epub-cfi.html",
+            "value": value,
+        },
+        "sortIndex": f"{spine_step:05d}|{raw_start:08d}",
     }
 
 
@@ -255,13 +257,6 @@ def _node_at(nodes: list[TextNode], offset: int) -> tuple[TextNode | None, int]:
         if node.start <= offset <= node.end:
             return node, max(0, min(offset - node.start, len(node.text)))
     return None, 0
-
-
-def _epub_sort_index(cfi: str) -> str:
-    numbers = [int(number) for number in re.findall(r"/([0-9]+)", cfi)]
-    spine = numbers[1] if len(numbers) > 1 else 0
-    content = numbers[-1] if numbers else 0
-    return f"{spine:05d}|{content:08d}"
 
 
 def _with_problem(item: dict[str, Any], problem: str) -> dict[str, Any]:

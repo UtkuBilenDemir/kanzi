@@ -100,3 +100,17 @@ PDF positioning uses Poppler tools (`pdftotext`, `pdftohtml`, `pdfinfo`). If a P
 ## Safety Rule
 
 Do not write directly to `zotero.sqlite`. Use read-only SQLite access for indexing and Zotero's JavaScript API for writes.
+
+## Zotero Plugin Wrapper
+
+The `plugin/` directory contains a hybrid Zotero plugin with one user-facing Tools action. It lets the user choose `My Clippings.txt`, runs the importer with visible progress, and writes positioned annotations through Zotero's native APIs. Unresolved cases are reported after the import; intermediate JSON artifacts are implementation details.
+
+Build the plugin package:
+
+```sh
+python scripts/build_plugin.py
+```
+
+Install `dist/kindle-zotero-importer.xpi` in Zotero via `Tools > Plugins`. Open `Tools > Kindle Zotero Importer...`, choose `My Clippings.txt`, and keep the manager open to see the current stage, percentage, elapsed time, and final annotation counts.
+
+The XPI manifest targets Zotero `6.999` through `10.0.*`.

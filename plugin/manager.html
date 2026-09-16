@@ -1,0 +1,1199 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Kindle Zotero Importer</title>
+  <style>
+    :root { color: #0a0a0a; background: #ffffff; font-family: 'iA Writer Duo', 'iA Writer Duos', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #root { padding: 20px; max-width: 1600px; margin: 0 auto; background: #ffffff; color: #0a0a0a; line-height: 1.5; }
+    h1 { margin: 0 0 4px; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; font-family: 'iA Writer Duo', ui-monospace, monospace; }
+    h2 { margin: 24px 0 10px; border-bottom: 1px solid #0a0a0a; padding-bottom: 6px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+    .tabs { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; border-bottom: 1px solid #0a0a0a; padding-bottom: 10px; }
+    .tab-button { padding: 6px 14px; border-radius: 0; border: 1px solid #0a0a0a; background: #ffffff; color: #0a0a0a; cursor: pointer; font-family: 'iA Writer Duo', ui-monospace, monospace; font-size: 13px; letter-spacing: 0.02em; }
+    .tab-button.active { background: #0a0a0a; color: #ffffff; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    .card { background: #ffffff; border: 1px solid #0a0a0a; border-radius: 0; padding: 12px; }
+    .card strong { display: block; font-size: 22px; font-weight: 700; }
+    label { display: block; margin: 9px 0 3px; font-weight: 600; }
+    input, textarea, select { width: 100%; box-sizing: border-box; padding: 7px; font-family: 'iA Writer Duo', ui-monospace, monospace; border: 1px solid #0a0a0a; background: #ffffff; color: #0a0a0a; }
+    textarea { min-height: 72px; }
+    table { width: 100%; border-collapse: collapse; background: #ffffff; table-layout: fixed; border: 1px solid #0a0a0a; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid #d0d0d0; border-right: 1px solid #e8e8e8; padding: 8px 10px; font-size: 12.5px; overflow-wrap: anywhere; user-select: text; position: relative; }
+    th { background: #ffffff; color: #0a0a0a; position: sticky; top: 0; font-weight: 600; border-bottom: 1px solid #0a0a0a; z-index: 1; }
+    th .resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; user-select: none; }
+    th .resizer:hover { background: #0a0a0a; opacity: 0.15; }
+    th:nth-child(1), td:nth-child(1) { width: 10%; }
+    th:nth-child(2), td:nth-child(2) { width: 9%; }
+    th:nth-child(3), td:nth-child(3) { width: 6%; }
+    th:nth-child(4), td:nth-child(4) { width: 24%; }
+    th:nth-child(5), td:nth-child(5) { width: 21%; }
+    th:nth-child(6), td:nth-child(6) { width: 30%; }
+    #tab-integrated table { table-layout: fixed; }
+    #tab-integrated th:nth-child(1), #tab-integrated td:nth-child(1) { width: 18%; }
+    #tab-integrated th:nth-child(2), #tab-integrated td:nth-child(2) { width: 12%; }
+    #tab-integrated th:nth-child(3), #tab-integrated td:nth-child(3) { width: 36%; }
+    #tab-integrated th:nth-child(4), #tab-integrated td:nth-child(4) { width: 11%; }
+    #tab-integrated th:nth-child(5), #tab-integrated td:nth-child(5) { width: 11%; }
+    #tab-integrated th:nth-child(6), #tab-integrated td:nth-child(6) { width: 12%; }
+    .pill { display: inline-block; background: #0a0a0a; color: #ffffff; border-radius: 0; padding: 2px 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+    .row-actions button, .row-actions .row-btn { margin: 2px; padding: 5px 10px; border: 1px solid #0a0a0a; border-radius: 0; background: #ffffff; color: #0a0a0a; cursor: pointer; font-size: 12px; font-family: 'iA Writer Duo', ui-monospace, monospace; }
+    .row-actions button:hover, .row-actions .row-btn:hover { background: #0a0a0a; color: #ffffff; }
+    .candidate-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+    .candidate-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #0a0a0a; padding: 6px 8px; background: #ffffff; font-size: 12px; line-height: 1.3; }
+    .candidate-option:hover { background: #f4f4f4; }
+    .candidate-option span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .candidate-option button { flex-shrink: 0; padding: 3px 8px; font-size: 11px; border: 1px solid #0a0a0a; background: #0a0a0a; color: #ffffff; cursor: pointer; }
+    .candidate-option button:hover { background: #ffffff; color: #0a0a0a; }
+    .manual-row { display: flex; gap: 4px; margin-top: 6px; }
+    .manual-row input { flex: 1; min-width: 0; font-size: 12px; border: 1px solid #0a0a0a; }
+    .manual-row button { white-space: nowrap; flex-shrink: 0; }
+    .notice { background: #ffffff; border: 1px solid #0a0a0a; border-radius: 0; padding: 10px; margin: 10px 0; font-size: 13px; }
+    .run-panel { background: #ffffff; color: #0a0a0a; border: 1px solid #0a0a0a; border-radius: 0; padding: 18px; margin: 16px 0; }
+    .file-button { display: inline-block; min-width: 240px; padding: 11px 16px; margin-bottom: 8px; font-size: 14px; font-weight: 700; text-align: center; color: #ffffff; background: #0a0a0a; border: 1px solid #0a0a0a; border-radius: 0; cursor: pointer; font-family: 'iA Writer Duo', ui-monospace, monospace; letter-spacing: 0.02em; }
+    .file-button:hover, .file-button:focus { background: #ffffff; color: #0a0a0a; outline: 1px solid #0a0a0a; }
+    .file-button.disabled { opacity: 0.4; cursor: wait; }
+    .run-panel progress { width: 100%; height: 14px; margin: 12px 0 5px; accent-color: #0a0a0a; }
+    .run-meta { display: flex; justify-content: space-between; gap: 12px; color: #0a0a0a; font-size: 12px; }
+    .ok { color: #0a7a0a; }
+    .err { color: #a00; }
+    .muted { color: #555; font-size: 12px; }
+    .highlight-text { max-width: 520px; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.45; font-family: 'iA Writer Duo', ui-monospace, monospace; }
+    .integrated-meta { font-size: 10.5px; color: #555; font-family: 'iA Writer Duo', ui-monospace, monospace; }
+    ::selection { background: #0a0a0a; color: #ffffff; }
+  </style>
+  <script>
+    var KindleManager = {
+      io: null,
+      plugin: null,
+      settings: null,
+      data: null,
+      rows: [],
+      running: false,
+      startedAt: null,
+      timer: null,
+      lastClippingsPath: null,
+
+      initSafe() {
+        try {
+          this.init();
+        } catch (error) {
+          const root = document.getElementById('root');
+          root.textContent = '';
+          const h1 = document.createElement('h1');
+          h1.textContent = 'Kindle Zotero Importer';
+          root.appendChild(h1);
+          const div = document.createElement('div');
+          div.className = 'notice err';
+          div.textContent = 'Manager failed to load: ' + String(error) + '\n' + (error.stack || '');
+          root.appendChild(div);
+        }
+      },
+
+      init() {
+        this.io = window.arguments && window.arguments[0];
+        if (!this.io || !this.io.plugin) throw new Error('Plugin connection was not provided');
+        this.plugin = this.io.plugin;
+        this.settings = this.io.settings;
+        this.data = this.io.data;
+        this.rows = this.conflictRows();
+        this.render();
+      },
+
+      async chooseAndImport() {
+        if (this.running) return;
+        try {
+          await this.plugin.runManagedImport(this);
+        } catch (e) {
+          Zotero.logError(e);
+          this.failRun(String(e && e.stack ? e.stack : e));
+        }
+      },
+
+      beginRun(path) {
+        this.running = true;
+        this.lastClippingsPath = path;
+        this.startedAt = Date.now();
+        const btn = document.getElementById('run-button');
+        if (btn) btn.classList.add('disabled');
+        const fileEl = document.getElementById('run-file');
+        if (fileEl) fileEl.textContent = path;
+        const resultsEl = document.getElementById('run-results');
+        if (resultsEl) resultsEl.textContent = '';
+        const bar = document.getElementById('reimport-bar');
+        if (bar) bar.style.display = 'none';
+        this.updateProgress(1, 'Starting import', 'Preparing pipeline');
+        clearInterval(this.timer);
+        this.timer = setInterval(() => this.updateElapsed(), 1000);
+      },
+
+      updateElapsed() {
+        if (!this.startedAt) return;
+        const seconds = Math.floor((Date.now() - this.startedAt) / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const el = document.getElementById('elapsed');
+        if (el) el.textContent = `${minutes}:${String(seconds % 60).padStart(2, '0')} elapsed`;
+      },
+
+      updateProgress(percent, stage, detail) {
+        const prog = document.getElementById('progress');
+        if (prog) prog.value = Math.max(0, Math.min(100, Number(percent) || 0));
+        const stageEl = document.getElementById('stage');
+        if (stageEl) stageEl.textContent = stage || 'Working';
+        const detailEl = document.getElementById('detail');
+        if (detailEl) detailEl.textContent = detail || '';
+        const pctEl = document.getElementById('percent');
+        if (pctEl) pctEl.textContent = `${Math.round(Number(percent) || 0)}%`;
+      },
+
+      completeRun(summary, results, data) {
+        this.running = false;
+        clearInterval(this.timer);
+        this.updateProgress(100, 'Import complete', 'Annotations have been checked and saved in Zotero');
+        const btn = document.getElementById('run-button');
+        if (btn) {
+          btn.classList.remove('disabled');
+          btn.textContent = 'Choose another clippings file';
+        }
+        const resultsEl = document.getElementById('run-results');
+        if (resultsEl) {
+          resultsEl.textContent = '';
+          const h2 = document.createElement('h2');
+          h2.textContent = 'Result';
+          resultsEl.appendChild(h2);
+          const grid = document.createElement('div');
+          grid.className = 'grid';
+          const makeCard = (value, label) => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            const strong = document.createElement('strong');
+            strong.textContent = String(value);
+            const span = document.createElement('span');
+            span.textContent = label;
+            card.appendChild(strong);
+            card.appendChild(span);
+            return card;
+          };
+          grid.appendChild(makeCard(results.created, 'created'));
+          grid.appendChild(makeCard(results.skippedExisting, 'already present'));
+          grid.appendChild(makeCard(results.updatedComments + results.updatedSortIndex, 'updated'));
+          grid.appendChild(makeCard(results.failed.length, 'failed'));
+          resultsEl.appendChild(grid);
+        }
+        this.data = data;
+        this.rows = this.conflictRows();
+        this.refreshRows();
+        this.refreshIntegrated();
+        this.refreshMappings();
+        const bar = document.getElementById('reimport-bar');
+        if (bar) bar.style.display = 'none';
+        this.status(`${summary.counts.final_annotations || 0} positioned annotations processed; ${this.rows.length} review rows remain.`, results.failed.length > 0);
+      },
+
+      failRun(message) {
+        this.running = false;
+        clearInterval(this.timer);
+        const btn = document.getElementById('run-button');
+        if (btn) btn.classList.remove('disabled');
+        this.updateProgress(0, 'Import failed', message);
+        this.status(message, true);
+      },
+
+      getFullReimport() {
+        const cb = document.getElementById('full-reimport-check');
+        return !!(cb && cb.checked);
+      },
+
+      updateInfobox() {
+        const box = document.getElementById('infobox');
+        if (!box) return;
+        const pending = (this.data.persistentOverrides?.overrides || []).length;
+        const integrated = this.data.finalPlan?.annotation_count || 0;
+        const conflicts = this.rows.length;
+        const hasPendingReimport = document.getElementById('reimport-bar')?.style.display !== 'none';
+        let html = `<div style="font-weight:600; margin-bottom:6px;">Ready to re-run</div>`;
+        html += `<div>${integrated} integrated · ${conflicts} conflicts · ${pending} mappings</div>`;
+        if (hasPendingReimport) {
+          const info = document.getElementById('reimport-info')?.textContent || 'New mapping saved';
+          html += `<div style="margin-top:6px; padding-top:6px; border-top:1px solid #0a0a0a; color:#0a0a0a;">${this.esc(info)}</div>`;
+          html += `<div style="margin-top:6px;"><button onclick="KindleManager.reimportWithOverrides()" style="width:100%; padding:6px; border:1px solid #0a0a0a; background:#0a0a0a; color:#fff; cursor:pointer; font-family:'iA Writer Duo', ui-monospace, monospace;">↻ Re-import now</button></div>`;
+        } else {
+          html += `<div style="margin-top:6px; color:#555;">No pending mappings — choose a candidate in Conflicts or delete in Mappings, then re-import.</div>`;
+        }
+        box.innerHTML = html;
+        box.style.display = 'block';
+      },
+
+      showReimportReady(title, count) {
+        const bar = document.getElementById('reimport-bar');
+        const info = document.getElementById('reimport-info');
+        if (bar) {
+          bar.style.display = 'block';
+          if (info) info.textContent = `Saved override for “${title}” (${count} highlight(s)). Click Re-import to integrate pending annotations for this article.`;
+        }
+        this.updateInfobox();
+      },
+
+      async reimportWithOverrides() {
+        if (this.running) return;
+        const isFull = this.getFullReimport();
+        const mode = isFull ? "FULL re-import from scratch (all highlights)" : "incremental (only new/changed/removed)";
+        if (this.lastClippingsPath) {
+          if (!confirm(`Re-import with saved overrides using last file?\n\n${this.lastClippingsPath}\n\nMode: ${mode}\nThis will re-run matching, positioning, and Zotero writing.`)) return;
+          await this.plugin.runManagedImportWithPath(this, this.lastClippingsPath, isFull);
+        } else {
+          await this.chooseAndImport();
+        }
+      },
+
+      esc(value) {
+        return String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      },
+
+      setTab(name) {
+        for (const el of document.querySelectorAll('.tab')) el.classList.toggle('active', el.id === `tab-${name}`);
+        for (const el of document.querySelectorAll('.tab-button')) el.classList.toggle('active', el.dataset.tab === name);
+      },
+
+      counts(items, key = 'status') {
+        const counts = {};
+        for (const item of items || []) counts[item[key] || 'unknown'] = (counts[item[key] || 'unknown'] || 0) + 1;
+        return counts;
+      },
+
+      cards(counts) {
+        return Object.entries(counts || {})
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([k, v]) => `<div class="card"><strong>${this.esc(v)}</strong><span>${this.esc(k)}</span></div>`)
+          .join('') || '<div class="card">No data</div>';
+      },
+
+      conflictRows() {
+        const rows = [];
+        for (const match of this.data.matches?.matches || []) {
+          if (['matched', 'ignored'].includes(match.status)) continue;
+          rows.push({ source: 'Title match', title: match.clipping_title, status: match.status, count: match.clipping_count, candidates: match.candidates || [] });
+        }
+        for (const override of this.data.generatedOverrides?.overrides || []) {
+          const s = override.review?.status || 'review';
+          if (['matched','ignored'].includes(s)) continue;
+          rows.push({ source: 'Override suggestion', title: override.clipping_title, status: s, count: override.review?.clipping_count || '', candidates: override.candidates || [], generated: override });
+        }
+        for (const item of this.data.positionedPlan?.items || []) {
+          if (['positioned', 'ignored-title'].includes(item.status)) continue;
+          rows.push({ source: 'Attachment/position', title: item.clipping?.title || '(missing title)', status: item.status || 'unknown', count: 1, detail: (item.problems || []).join('; ') || 'Needs review', candidates: [] });
+        }
+        return rows;
+      },
+
+      async saveCandidate(index) {
+        const row = this.rows[index];
+        const select = document.getElementById(`candidate-${index}`);
+        if (!select) return this.status('No candidate menu found', true);
+        const candidate = row.candidates?.[Number(select.value)];
+        if (!candidate) return this.status('No candidate selected', true);
+        if (!confirm(`Map Kindle title to ${candidate.citation_key || candidate.key || candidate.item_id}?\n\n${row.title}\n→ ${candidate.title}`)) return;
+        let resolution;
+        if (candidate.citation_key) resolution = { citation_key: candidate.citation_key };
+        else if (candidate.key) resolution = { zotero_key: candidate.key };
+        else resolution = { zotero_item_id: candidate.item_id };
+        await this.plugin.saveOverride({
+          clipping_title: row.title,
+          clipping_count: row.count,
+          resolution,
+          review: { status: row.status, clipping_count: row.count || 0 },
+        });
+        this.status(`Saved override for ${row.title} → ${candidate.citation_key || candidate.key}. Click Re-import to integrate ${row.count} pending highlight(s).`, false);
+        this.showReimportReady(row.title, row.count);
+        this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
+        this.refreshMappings();
+        // Immediately hide mapped titles from Conflicts view
+        const mappedTitles = new Set([row.title, ...otherRows.map(r=>r.title)]);
+        this.rows = this.rows.filter(r => !mappedTitles.has(r.title));
+        this.refreshRows();
+      },
+
+      async saveCandidateAt(rowIndex, candIndex) {
+        const row = this.rows[rowIndex];
+        const candidate = row.candidates?.[candIndex];
+        if (!candidate) return this.status('No candidate selected', true);
+        const targetKey = candidate.citation_key || candidate.key || String(candidate.item_id);
+        // Find other titles that share this same candidate
+        const otherRows = this.rows.filter((r, idx) => idx !== rowIndex && (r.candidates || []).some(c => (c.citation_key || c.key || String(c.item_id)) === targetKey));
+        let extraMsg = "";
+        if (otherRows.length) extraMsg = `\n\nAlso apply to ${otherRows.length} other title(s) with same candidate ${targetKey}?\n` + otherRows.map(r => `• ${r.title.slice(0,60)}`).join("\n");
+        if (!confirm(`Map Kindle title to ${candidate.citation_key || candidate.key || candidate.item_id}?\n\n${row.title}\n→ ${candidate.title}${extraMsg}`)) return;
+        let resolution;
+        if (candidate.citation_key) resolution = { citation_key: candidate.citation_key };
+        else if (candidate.key) resolution = { zotero_key: candidate.key };
+        else resolution = { zotero_item_id: candidate.item_id };
+        await this.plugin.saveOverride({
+          clipping_title: row.title,
+          clipping_count: row.count,
+          resolution,
+          review: { status: row.status, clipping_count: row.count || 0 },
+        });
+        let appliedTitles = [row.title];
+        if (otherRows.length && confirm(`Apply same mapping ${targetKey} to ${otherRows.length} other title(s)?`)) {
+          for (const other of otherRows) {
+            await this.plugin.saveOverride({
+              clipping_title: other.title,
+              clipping_count: other.count,
+              resolution: { ...resolution },
+              review: { status: other.status, clipping_count: other.count || 0 },
+            });
+          }
+          appliedTitles = [row.title, ...otherRows.map(r=>r.title)];
+          this.status(`Saved override for ${row.title} + ${otherRows.length} similar titles → ${targetKey}. Click Re-import to integrate.`, false);
+          this.showReimportReady(`${row.title} + ${otherRows.length} others`, row.count + otherRows.reduce((s,r)=>s+(r.count||0),0));
+        } else {
+          this.status(`Saved override for ${row.title} → ${targetKey}. Click Re-import to integrate ${row.count} pending highlight(s).`, false);
+          this.showReimportReady(row.title, row.count);
+        }
+        this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
+        this.refreshMappings();
+        // Immediately hide mapped titles from Conflicts view
+        const mappedSet = new Set(appliedTitles);
+        this.rows = this.rows.filter(r => !mappedSet.has(r.title));
+        this.refreshRows();
+      },
+
+      makeTableResizable(table) {
+        if (!table || table.dataset.resizable) return;
+        table.dataset.resizable = "1";
+        const ths = table.querySelectorAll('th');
+        ths.forEach(th => {
+          const resizer = document.createElement('div');
+          resizer.className = 'resizer';
+          th.appendChild(resizer);
+          let startX, startWidth;
+          const onMouseMove = (e) => {
+            const dx = e.clientX - startX;
+            th.style.width = (startWidth + dx) + 'px';
+          };
+          const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+          };
+          resizer.addEventListener('mousedown', (e) => {
+            startX = e.clientX;
+            startWidth = th.offsetWidth;
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            e.preventDefault();
+          });
+        });
+      },
+
+      makeTableSortable(table) {
+        if (!table || table.dataset.sortable) return;
+        table.dataset.sortable = "1";
+        const ths = table.querySelectorAll('th');
+        let sortCol = -1;
+        let sortAsc = true;
+        ths.forEach((th, idx) => {
+          th.style.cursor = 'pointer';
+          th.title = 'Click to sort';
+          th.addEventListener('click', (e) => {
+            if (e.target.classList.contains('resizer')) return;
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            // Ignore placeholder rows with colspan
+            if (rows.length && rows[0].querySelector('td[colspan]')) return;
+            if (sortCol === idx) sortAsc = !sortAsc;
+            else { sortCol = idx; sortAsc = true; }
+            ths.forEach(h => h.textContent = h.textContent.replace(/ [▲▼]$/, ''));
+            th.textContent = th.textContent + (sortAsc ? ' ▲' : ' ▼');
+            rows.sort((a,b) => {
+              const getText = (row, col) => (row.children[col]?.textContent || '').toLowerCase().trim();
+              const va = getText(a, idx);
+              const vb = getText(b, idx);
+              // Try numeric compare if both look numeric
+              const na = parseFloat(va);
+              const nb = parseFloat(vb);
+              if (!isNaN(na) && !isNaN(nb) && va !== '' && vb !== '') {
+                if (na < nb) return sortAsc ? -1 : 1;
+                if (na > nb) return sortAsc ? 1 : -1;
+              }
+              if (va < vb) return sortAsc ? -1 : 1;
+              if (va > vb) return sortAsc ? 1 : -1;
+              return 0;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+          });
+        });
+      },
+
+      async saveManualCandidate(index) {
+        const row = this.rows[index];
+        const input = document.getElementById(`manual-${index}`);
+        const raw = (input?.value || '').trim();
+        if (!raw) return this.status('Enter a citation key, Zotero key, or item ID', true);
+        let resolution;
+        if (/^\d+$/.test(raw)) {
+          resolution = { zotero_item_id: Number(raw) };
+        } else if (/^[A-Z0-9]{8}$/.test(raw)) {
+          resolution = { zotero_key: raw.toUpperCase() };
+        } else {
+          resolution = { citation_key: raw };
+        }
+        const hasValue = Object.values(resolution).some(v => v !== '' && v != null);
+        if (!hasValue) return this.status('Invalid key', true);
+        // Find other titles that could use same custom key (share candidate or similar title)
+        const otherRows = this.rows.filter((r, idx) => idx !== index && (r.candidates || []).some(c => (c.citation_key || c.key) === raw || String(c.item_id) === raw));
+        let extra = otherRows.length ? `\n\nAlso apply "${raw}" to ${otherRows.length} other title(s) that have this candidate?\n` + otherRows.map(r=>`• ${r.title.slice(0,55)}`).join("\n") : "";
+        if (!confirm(`Map Kindle title to custom key "${raw}"?\n\n${row.title}\n→ ${raw}${extra}\n\nYou can enter any citation key (e.g. deleuze1987), Zotero key (8 chars), or numeric item ID.`)) return;
+        await this.plugin.saveOverride({
+          clipping_title: row.title,
+          clipping_count: row.count,
+          resolution,
+          review: { status: row.status, clipping_count: row.count || 0 },
+        });
+        if (otherRows.length && confirm(`Apply same custom key "${raw}" to ${otherRows.length} other title(s)?`)) {
+          for (const other of otherRows) {
+            await this.plugin.saveOverride({
+              clipping_title: other.title,
+              clipping_count: other.count,
+              resolution: { ...resolution },
+              review: { status: other.status, clipping_count: other.count || 0 },
+            });
+          }
+          this.status(`Saved custom override for ${row.title} + ${otherRows.length} others → ${raw}. Click Re-import.`, false);
+          this.showReimportReady(`${row.title} + ${otherRows.length} others`, row.count + otherRows.reduce((s,r)=>s+(r.count||0),0));
+          const mappedTitles = new Set([row.title, ...otherRows.map(r=>r.title)]);
+          this.rows = this.rows.filter(r => !mappedTitles.has(r.title));
+        } else {
+          this.status(`Saved custom override for ${row.title} → ${raw}. Click Re-import to integrate ${row.count} pending highlight(s).`, false);
+          this.showReimportReady(row.title, row.count);
+          this.rows = this.rows.filter(r => r.title !== row.title);
+        }
+        this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
+        this.refreshMappings();
+        this.refreshRows();
+        input.value = '';
+      },
+
+      async ignore(index) {
+        const row = this.rows[index];
+        if (!confirm(`Ignore all Kindle clippings for this title?\n\n${row.title}`)) return;
+        await this.plugin.saveOverride({
+          clipping_title: row.title,
+          clipping_count: row.count,
+          resolution: { ignore: true },
+          review: { status: row.status, clipping_count: row.count || 0 },
+        });
+        this.status(`Saved ignore override for ${row.title}. Click Re-import to apply.`, false);
+        this.showReimportReady(row.title, row.count);
+        this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
+        this.refreshMappings();
+      },
+
+      status(message, error) {
+        const el = document.getElementById('status');
+        if (el) {
+          if (!message) {
+            el.style.display = 'none';
+            el.textContent = '';
+            return;
+          }
+          el.style.display = 'block';
+          el.className = 'notice';
+          el.style.borderLeft = error ? '4px solid #a00' : '4px solid #0a0a0a';
+          el.style.background = error ? '#fff0f0' : '#f9f9f9';
+          el.textContent = message;
+        }
+      },
+
+      formatDate(iso) {
+        if (!iso) return '—';
+        try {
+          const d = new Date(iso);
+          if (isNaN(d)) return iso.slice(0,10);
+          return d.toISOString().slice(0,10);
+        } catch { return String(iso).slice(0,10); }
+      },
+
+      getIntegratedHighlights() {
+        const anns = this.data.finalPlan?.annotations || [];
+        return anns.slice().sort((a,b) => (a.clipping_title || '').localeCompare(b.clipping_title || '') || (a.annotation?.text || '').localeCompare(b.annotation?.text || ''));
+      },
+
+      buildClippingDateMap() {
+        const map = new Map();
+        const items = this.data.positionedPlan?.items || [];
+        for (const it of items) {
+          const c = it.clipping;
+          if (c && c.id) map.set(c.id, { added_on: c.added_on, added_on_iso: c.added_on_iso });
+        }
+        return map;
+      },
+
+      refreshIntegrated() {
+        const tbody = document.getElementById('integrated-rows');
+        const countEl = document.getElementById('integrated-count');
+        if (!tbody) return;
+        tbody.textContent = '';
+        const needle = (document.getElementById('integrated-search')?.value || '').toLowerCase();
+        const all = this.getIntegratedHighlights();
+        const dateMap = this.buildClippingDateMap();
+        const filtered = needle ? all.filter(a => `${a.clipping_title} ${a.annotation?.text || ''} ${a.citation_key || ''} ${a.annotation?.pageLabel || ''} ${a.clipping_added_on_iso || ''} ${a.integrated_at || ''}`.toLowerCase().includes(needle)) : all;
+        const toShow = filtered.slice(0, 400);
+        if (countEl) countEl.textContent = `${filtered.length} of ${all.length} shown (first 400)`;
+        if (!toShow.length) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 6;
+          td.textContent = all.length ? 'No highlights match the filter.' : 'No integrated highlights yet — run an import.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          return;
+        }
+        for (const ann of toShow) {
+          const tr = document.createElement('tr');
+          const tdTitle = document.createElement('td');
+          tdTitle.textContent = ann.clipping_title || '';
+          tr.appendChild(tdTitle);
+          const tdCite = document.createElement('td');
+          tdCite.textContent = ann.citation_key || ann.parent_key || '—';
+          tdCite.style.fontFamily='ui-monospace, monospace';
+          tdCite.style.fontSize='12px';
+          tr.appendChild(tdCite);
+          const tdText = document.createElement('td');
+          tdText.className = 'highlight-text';
+          let text = ann.annotation?.text || '';
+          if (text.length > 380) text = text.slice(0,380) + '…';
+          tdText.textContent = text;
+          tr.appendChild(tdText);
+          const tdAdded = document.createElement('td');
+          const addedIso = ann.clipping_added_on_iso || dateMap.get(ann.clipping_id)?.added_on_iso || '';
+          tdAdded.textContent = this.formatDate(addedIso);
+          tdAdded.title = ann.clipping_added_on || addedIso || '';
+          tdAdded.style.fontSize='12px';
+          tr.appendChild(tdAdded);
+          const tdIntegrated = document.createElement('td');
+          tdIntegrated.textContent = this.formatDate(ann.integrated_at);
+          tdIntegrated.title = ann.integrated_at || '';
+          tdIntegrated.style.fontSize='12px';
+          tr.appendChild(tdIntegrated);
+          const tdPage = document.createElement('td');
+          tdPage.textContent = ann.annotation?.pageLabel || '—';
+          const swatch = document.createElement('span');
+          swatch.style.display='inline-block';
+          swatch.style.width='10px';
+          swatch.style.height='10px';
+          swatch.style.borderRadius='2px';
+          swatch.style.border='1px solid #999';
+          swatch.style.background = ann.annotation?.color || '#ffd400';
+          swatch.style.marginLeft='4px';
+          swatch.style.verticalAlign='middle';
+          tdPage.appendChild(swatch);
+          tr.appendChild(tdPage);
+          tbody.appendChild(tr);
+        }
+      },
+
+      refreshMappings() {
+        const tbody = document.getElementById('mappings-rows');
+        const countEl = document.getElementById('mappings-count');
+        if (!tbody) return;
+        tbody.textContent = '';
+        const needle = (document.getElementById('mappings-search')?.value || '').toLowerCase();
+        const overrides = this.data.persistentOverrides?.overrides || [];
+        const filtered = needle ? overrides.filter(o => `${o.clipping_title} ${o.resolution?.citation_key || ''} ${o.resolution?.zotero_key || ''} ${o.resolution?.ignore ? 'ignored' : ''}`.toLowerCase().includes(needle)) : overrides;
+        if (countEl) countEl.textContent = `${filtered.length} of ${overrides.length} mappings`;
+        if (!filtered.length) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 6;
+          td.textContent = overrides.length ? 'No mappings match the filter.' : 'No established mappings yet — approve a candidate in Conflicts and Re-import.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          return;
+        }
+        for (const entry of filtered) {
+          const tr = document.createElement('tr');
+          const tdTitle = document.createElement('td');
+          tdTitle.textContent = entry.clipping_title;
+          tdTitle.title = entry.clipping_title;
+          tr.appendChild(tdTitle);
+          const tdRes = document.createElement('td');
+          if (entry.resolution?.ignore) {
+            tdRes.textContent = 'Ignored';
+            tdRes.style.fontStyle = 'italic';
+            tdRes.style.color = '#a00';
+          } else if (entry.resolution?.citation_key) {
+            tdRes.textContent = entry.resolution.citation_key;
+            tdRes.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+            tdRes.style.fontWeight = '600';
+          } else if (entry.resolution?.zotero_key) {
+            tdRes.textContent = entry.resolution.zotero_key;
+            tdRes.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          } else if (entry.resolution?.zotero_item_id) {
+            tdRes.textContent = String(entry.resolution.zotero_item_id);
+          } else {
+            tdRes.textContent = '—';
+          }
+          tr.appendChild(tdRes);
+          const tdStatus = document.createElement('td');
+          tdStatus.textContent = entry.review?.status || '—';
+          tdStatus.style.fontSize = '11px';
+          tr.appendChild(tdStatus);
+          const tdCount = document.createElement('td');
+          tdCount.textContent = String(entry.review?.clipping_count ?? '—');
+          tr.appendChild(tdCount);
+          const tdDate = document.createElement('td');
+          const dateVal = entry.updated_at || entry.created_at || '';
+          tdDate.textContent = this.formatDate(dateVal);
+          tdDate.title = dateVal || '';
+          tdDate.style.fontSize = '11px';
+          tdDate.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          tr.appendChild(tdDate);
+          const tdAction = document.createElement('td');
+          const delBtn = document.createElement('button');
+          delBtn.textContent = 'Delete';
+          delBtn.title = 'Remove this override and return to Conflicts';
+          delBtn.style.padding = '3px 8px';
+          delBtn.style.border = '1px solid #a00';
+          delBtn.style.background = '#ffffff';
+          delBtn.style.color = '#a00';
+          delBtn.style.cursor = 'pointer';
+          delBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          delBtn.style.fontSize = '11px';
+          delBtn.addEventListener('click', () => this.deleteMapping(entry.clipping_title));
+          tdAction.appendChild(delBtn);
+          tr.appendChild(tdAction);
+          tbody.appendChild(tr);
+        }
+      },
+
+      async deleteMapping(title) {
+        if (!confirm(`Delete override for “${title}”?\n\nIt will return to Conflicts on next Re-import.`)) return;
+        try {
+          await this.plugin.deleteOverride(title);
+          this.status(`Deleted override for ${title}. Re-import to restore it as a conflict.`, false);
+          this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
+          this.refreshMappings();
+          this.showReimportReady(title, 0);
+        } catch (e) {
+          this.status(String(e), true);
+        }
+      },
+
+      async saveSettings() {
+        const newSettings = {
+          projectDir: document.getElementById('setting-projectDir')?.value?.trim(),
+          pythonPath: document.getElementById('setting-pythonPath')?.value?.trim(),
+          zoteroDbPath: document.getElementById('setting-zoteroDbPath')?.value?.trim(),
+          zoteroStorageRoot: document.getElementById('setting-zoteroStorageRoot')?.value?.trim(),
+        };
+        try {
+          await this.plugin.saveSettingsFromManager(newSettings);
+          this.settings = { ...this.settings, ...newSettings };
+          this.status('Settings saved.', false);
+        } catch (e) {
+          this.status(String(e), true);
+        }
+      },
+
+      render() {
+        const root = document.getElementById('root');
+        root.textContent = '';
+        const headerWrap = document.createElement('div');
+        headerWrap.style.display = 'flex';
+        headerWrap.style.justifyContent = 'space-between';
+        headerWrap.style.alignItems = 'flex-start';
+        headerWrap.style.gap = '12px';
+        const headerLeft = document.createElement('div');
+        const h1 = document.createElement('h1');
+        h1.textContent = 'Kindle Zotero Importer';
+        headerLeft.appendChild(h1);
+        const muted = document.createElement('div');
+        muted.className = 'muted';
+        muted.textContent = 'Import Kindle highlights into Zotero and review unresolved items.';
+        headerLeft.appendChild(muted);
+        headerWrap.appendChild(headerLeft);
+        const infobox = document.createElement('div');
+        infobox.id = 'infobox';
+        infobox.style.minWidth = '260px';
+        infobox.style.maxWidth = '380px';
+        infobox.style.border = '1px solid #0a0a0a';
+        infobox.style.background = '#ffffff';
+        infobox.style.padding = '10px';
+        infobox.style.fontSize = '12px';
+        infobox.style.lineHeight = '1.4';
+        infobox.style.display = 'none';
+        headerWrap.appendChild(infobox);
+        root.appendChild(headerWrap);
+        const panel = document.createElement('div');
+        panel.className = 'run-panel';
+        const runButton = document.createElement('div');
+        runButton.id = 'run-button';
+        runButton.className = 'file-button';
+        runButton.setAttribute('role', 'button');
+        runButton.tabIndex = 0;
+        runButton.textContent = 'Choose My Clippings.txt';
+        runButton.addEventListener('click', () => this.chooseAndImport());
+        runButton.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            this.chooseAndImport();
+          }
+        });
+        panel.appendChild(runButton);
+        const runFile = document.createElement('div');
+        runFile.id = 'run-file';
+        runFile.className = 'muted';
+        runFile.textContent = 'No file selected';
+        runFile.style.color = '#d7e0e3';
+        panel.appendChild(runFile);
+        const progress = document.createElement('progress');
+        progress.id = 'progress';
+        progress.max = 100;
+        progress.value = 0;
+        panel.appendChild(progress);
+        const meta = document.createElement('div');
+        meta.className = 'run-meta';
+        const stage = document.createElement('strong');
+        stage.id = 'stage';
+        stage.textContent = 'Ready';
+        meta.appendChild(stage);
+        const pctWrap = document.createElement('span');
+        const pct = document.createElement('span');
+        pct.id = 'percent';
+        pct.textContent = '0%';
+        pctWrap.appendChild(pct);
+        pctWrap.appendChild(document.createTextNode(' · '));
+        const elapsed = document.createElement('span');
+        elapsed.id = 'elapsed';
+        elapsed.textContent = '0:00 elapsed';
+        pctWrap.appendChild(elapsed);
+        meta.appendChild(pctWrap);
+        panel.appendChild(meta);
+        const detail = document.createElement('div');
+        detail.id = 'detail';
+        detail.textContent = 'Select your cumulative Kindle clippings file to begin.';
+        panel.appendChild(detail);
+        const fullRow = document.createElement('div');
+        fullRow.style.marginTop = '8px';
+        fullRow.style.display = 'flex';
+        fullRow.style.alignItems = 'center';
+        fullRow.style.gap = '6px';
+        const fullCheck = document.createElement('input');
+        fullCheck.type = 'checkbox';
+        fullCheck.id = 'full-reimport-check';
+        fullCheck.style.width = 'auto';
+        fullRow.appendChild(fullCheck);
+        const fullLabel = document.createElement('label');
+        fullLabel.htmlFor = 'full-reimport-check';
+        fullLabel.textContent = 'Full re-import from scratch (ignore incremental, re-process all)';
+        fullLabel.style.margin = '0';
+        fullLabel.style.fontSize = '12px';
+        fullLabel.style.color = '#0a0a0a';
+        fullLabel.title = 'When checked, re-processes all 2379 clippings from scratch (slow). Unchecked = incremental (only new/changed highlights, fast).';
+        fullRow.appendChild(fullLabel);
+        panel.appendChild(fullRow);
+        root.appendChild(panel);
+
+        const resultsDiv = document.createElement('div');
+        resultsDiv.id = 'run-results';
+        root.appendChild(resultsDiv);
+
+        const tabs = document.createElement('div');
+        tabs.className = 'tabs';
+        const tabNames = [['summary','Summary'],['integrated','Integrated'],['conflicts','Conflicts'],['mappings','Mappings'],['settings','Settings'],['artifacts','Artifacts']];
+        for (const [id,label] of tabNames) {
+          const btn = document.createElement('div');
+          btn.className = 'tab-button' + (id==='summary' ? ' active' : '');
+          btn.dataset.tab = id;
+          btn.textContent = label;
+          btn.setAttribute('role','button');
+          btn.tabIndex = 0;
+          btn.addEventListener('click', () => this.setTab(id));
+          btn.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault(); this.setTab(id);} });
+          tabs.appendChild(btn);
+        }
+        root.appendChild(tabs);
+
+        const summaryTab = document.createElement('div');
+        summaryTab.id = 'tab-summary';
+        summaryTab.className = 'tab active';
+        const matchCounts = this.counts(this.data.matches?.matches || []);
+        const planCounts = this.data.positionedPlan?.status_counts || this.counts(this.data.positionedPlan?.items || []);
+        const finalCount = this.data.finalPlan?.annotation_count || 0;
+        summaryTab.innerHTML = `
+            <h2>Import Summary</h2>
+            <div class="grid">
+              <div class="card"><strong>${this.esc(this.data.summary?.counts?.clippings || '-')}</strong><span>clippings</span></div>
+              <div class="card"><strong>${this.esc(this.data.summary?.counts?.unique_titles || '-')}</strong><span>unique titles</span></div>
+              <div class="card"><strong>${this.esc(finalCount)}</strong><span>final annotations</span></div>
+              <div class="card"><strong>${this.esc(this.rows.length)}</strong><span>conflict rows</span></div>
+            </div>
+            <h2>Match Statuses</h2><div class="grid">${this.cards(matchCounts)}</div>
+            <h2>Plan Statuses</h2><div class="grid">${this.cards(planCounts)}</div>
+            <div class="notice">Unresolved title and positioning cases remain available under Conflicts. They do not prevent positioned annotations from importing. Check Integrated for highlights that were included.</div>`;
+        root.appendChild(summaryTab);
+
+        const integratedTab = document.createElement('div');
+        integratedTab.id = 'tab-integrated';
+        integratedTab.className = 'tab';
+        const iH2 = document.createElement('h2');
+        iH2.textContent = 'Last Integrated Highlights';
+        integratedTab.appendChild(iH2);
+        const iDesc = document.createElement('div');
+        iDesc.className='muted';
+        iDesc.textContent = 'Highlights from the last successful pipeline run (import-plan.final.json). Filter by title, text, or citation key. After saving custom overrides, rerun the import to update this list.';
+        integratedTab.appendChild(iDesc);
+        const iSearchWrap = document.createElement('div');
+        iSearchWrap.style.display = 'flex';
+        iSearchWrap.style.justifyContent = 'flex-end';
+        iSearchWrap.style.margin = '8px 0';
+        const iSearch = document.createElement('input');
+        iSearch.id = 'integrated-search';
+        iSearch.placeholder = 'Filter integrated highlights by title, text, citekey...';
+        iSearch.style.width = '320px';
+        iSearch.style.maxWidth = '50%';
+        iSearch.addEventListener('input', () => this.refreshIntegrated());
+        iSearchWrap.appendChild(iSearch);
+        integratedTab.appendChild(iSearchWrap);
+        const iCount = document.createElement('div');
+        iCount.id='integrated-count';
+        iCount.className='muted';
+        iCount.style.margin='6px 0';
+        integratedTab.appendChild(iCount);
+        const iTable = document.createElement('table');
+        const iThead = document.createElement('thead');
+        iThead.innerHTML = '<tr><th>Kindle Title</th><th>Citekey</th><th>Highlight Text</th><th>Added On</th><th>Integrated</th><th>Page</th></tr>';
+        iTable.appendChild(iThead);
+        const iTbody = document.createElement('tbody');
+        iTbody.id='integrated-rows';
+        iTable.appendChild(iTbody);
+        integratedTab.appendChild(iTable);
+        root.appendChild(integratedTab);
+
+        const conflictsTab = document.createElement('div');
+        conflictsTab.id = 'tab-conflicts';
+        conflictsTab.className = 'tab';
+        const cH2 = document.createElement('h2');
+        cH2.textContent = 'Conflicts';
+        conflictsTab.appendChild(cH2);
+        const cDesc = document.createElement('div');
+        cDesc.className='muted';
+        cDesc.textContent='Pick a suggested candidate or enter any citation key / Zotero key / item ID manually. Each candidate row has a dedicated Use button. “Use Custom” saves your manual entry. After saving, use Re-import to integrate pending highlights.';
+        conflictsTab.appendChild(cDesc);
+        const reimportBar = document.createElement('div');
+        reimportBar.id = 'reimport-bar';
+        reimportBar.style.display = 'none';
+        reimportBar.style.border = '1px solid #0a0a0a';
+        reimportBar.style.background = '#0a0a0a';
+        reimportBar.style.color = '#ffffff';
+        reimportBar.style.padding = '10px';
+        reimportBar.style.margin = '10px 0';
+        const reimportText = document.createElement('span');
+        reimportText.id = 'reimport-info';
+        reimportText.textContent = 'Override saved — click to re-import.';
+        reimportBar.appendChild(reimportText);
+        const reimportBtn = document.createElement('button');
+        reimportBtn.textContent = '↻ Re-import with saved overrides';
+        reimportBtn.style.marginLeft = '10px';
+        reimportBtn.style.background = '#ffffff';
+        reimportBtn.style.color = '#0a0a0a';
+        reimportBtn.style.border = '1px solid #ffffff';
+        reimportBtn.style.padding = '4px 10px';
+        reimportBtn.style.cursor = 'pointer';
+        reimportBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+        reimportBtn.addEventListener('click', () => this.reimportWithOverrides());
+        reimportBar.appendChild(reimportBtn);
+        conflictsTab.appendChild(reimportBar);
+        const searchWrap = document.createElement('div');
+        searchWrap.style.display = 'flex';
+        searchWrap.style.justifyContent = 'flex-end';
+        searchWrap.style.margin = '8px 0';
+        const search = document.createElement('input');
+        search.id = 'search';
+        search.placeholder = 'Filter conflicts by title, status, candidate, citekey...';
+        search.style.width = '320px';
+        search.style.maxWidth = '50%';
+        search.addEventListener('input', () => this.refreshRows());
+        searchWrap.appendChild(search);
+        conflictsTab.appendChild(searchWrap);
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>Source</th><th>Status</th><th>Count</th><th>Kindle Title</th><th>Candidates / Detail</th><th>Action</th></tr>';
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        tbody.id = 'rows';
+        table.appendChild(tbody);
+        conflictsTab.appendChild(table);
+        root.appendChild(conflictsTab);
+
+        const mappingsTab = document.createElement('div');
+        mappingsTab.id = 'tab-mappings';
+        mappingsTab.className = 'tab';
+        const mH2 = document.createElement('h2');
+        mH2.textContent = 'Established Mappings';
+        mappingsTab.appendChild(mH2);
+        const mDesc = document.createElement('div');
+        mDesc.className = 'muted';
+        mDesc.textContent = 'Overrides you have approved (mapped or ignored). Delete any entry to send it back to Conflicts. After deleting, Re-import to restore it as a conflict.';
+        mappingsTab.appendChild(mDesc);
+        const mSearchWrap = document.createElement('div');
+        mSearchWrap.style.display = 'flex';
+        mSearchWrap.style.justifyContent = 'flex-end';
+        mSearchWrap.style.margin = '8px 0';
+        const mSearch = document.createElement('input');
+        mSearch.id = 'mappings-search';
+        mSearch.placeholder = 'Filter mappings by title, citekey...';
+        mSearch.style.width = '320px';
+        mSearch.style.maxWidth = '50%';
+        mSearch.addEventListener('input', () => this.refreshMappings());
+        mSearchWrap.appendChild(mSearch);
+        mappingsTab.appendChild(mSearchWrap);
+        const mCount = document.createElement('div');
+        mCount.id = 'mappings-count';
+        mCount.className = 'muted';
+        mCount.style.margin = '6px 0';
+        mappingsTab.appendChild(mCount);
+        const mTable = document.createElement('table');
+        const mThead = document.createElement('thead');
+        mThead.innerHTML = '<tr><th>Kindle Title</th><th>Resolution</th><th>Status</th><th>Count</th><th>Date</th><th>Action</th></tr>';
+        mTable.appendChild(mThead);
+        const mTbody = document.createElement('tbody');
+        mTbody.id = 'mappings-rows';
+        mTable.appendChild(mTbody);
+        mappingsTab.appendChild(mTable);
+        root.appendChild(mappingsTab);
+
+        const settingsTab = document.createElement('div');
+        settingsTab.id = 'tab-settings';
+        settingsTab.className = 'tab';
+        const sH2 = document.createElement('h2');
+        sH2.textContent = 'Settings';
+        settingsTab.appendChild(sH2);
+        const sForm = document.createElement('div');
+        const makeSettingField = (label, id, value) => {
+          const l = document.createElement('label');
+          l.textContent = label;
+          sForm.appendChild(l);
+          const inp = document.createElement('input');
+          inp.id = id;
+          inp.value = value || '';
+          sForm.appendChild(inp);
+        };
+        makeSettingField('Project directory', 'setting-projectDir', this.settings.projectDir);
+        makeSettingField('Python executable', 'setting-pythonPath', this.settings.pythonPath);
+        makeSettingField('Zotero DB', 'setting-zoteroDbPath', this.settings.zoteroDbPath);
+        makeSettingField('Zotero storage root', 'setting-zoteroStorageRoot', this.settings.zoteroStorageRoot);
+        const sSaveBtn = document.createElement('button');
+        sSaveBtn.textContent = 'Save Settings';
+        sSaveBtn.style.marginTop = '12px';
+        sSaveBtn.style.padding = '6px 14px';
+        sSaveBtn.style.border = '1px solid #0a0a0a';
+        sSaveBtn.style.background = '#0a0a0a';
+        sSaveBtn.style.color = '#ffffff';
+        sSaveBtn.style.cursor = 'pointer';
+        sSaveBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+        sSaveBtn.addEventListener('click', () => this.saveSettings());
+        sForm.appendChild(sSaveBtn);
+        const sNotice = document.createElement('div');
+        sNotice.className = 'notice';
+        sNotice.style.marginTop = '12px';
+        sNotice.textContent = 'Saves to prefs and plugin-config.json in the project directory. No restart required.';
+        sForm.appendChild(sNotice);
+        settingsTab.appendChild(sForm);
+        root.appendChild(settingsTab);
+
+        const artifactsTab = document.createElement('div');
+        artifactsTab.id = 'tab-artifacts';
+        artifactsTab.className = 'tab';
+        const aH2 = document.createElement('h2');
+        aH2.textContent = 'Artifacts';
+        artifactsTab.appendChild(aH2);
+        const aDesc = document.createElement('div');
+        aDesc.className = 'muted';
+        aDesc.textContent = 'Generated files from the last pipeline run. Open to view, Reveal to show in Finder.';
+        artifactsTab.appendChild(aDesc);
+        const artifacts = [
+          ['Mismatch review', 'docs/mismatch-review.md'],
+          ['Persistent overrides', 'match-overrides.json'],
+          ['Generated suggestions', 'match-overrides.generated.json'],
+          ['Positioned plan', 'import-plan.positioned.json'],
+          ['Final writer plan', 'import-plan.final.json'],
+          ['Plugin summary', 'plugin-summary.json'],
+        ];
+        for (const [label, rel] of artifacts) {
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.justifyContent = 'space-between';
+          row.style.alignItems = 'center';
+          row.style.border = '1px solid #0a0a0a';
+          row.style.padding = '6px 10px';
+          row.style.margin = '6px 0';
+          row.style.background = '#ffffff';
+          const left = document.createElement('div');
+          left.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          left.style.fontSize = '12px';
+          left.textContent = `${label}: ${this.plugin.artifactPath(rel)}`;
+          row.appendChild(left);
+          const right = document.createElement('div');
+          right.style.display = 'flex';
+          right.style.gap = '4px';
+          const openBtn = document.createElement('button');
+          openBtn.textContent = 'Open';
+          openBtn.style.padding = '3px 8px';
+          openBtn.style.border = '1px solid #0a0a0a';
+          openBtn.style.background = '#ffffff';
+          openBtn.style.cursor = 'pointer';
+          openBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          openBtn.addEventListener('click', () => this.plugin.openArtifact(rel));
+          right.appendChild(openBtn);
+          const revealBtn = document.createElement('button');
+          revealBtn.textContent = 'Reveal';
+          revealBtn.style.padding = '3px 8px';
+          revealBtn.style.border = '1px solid #0a0a0a';
+          revealBtn.style.background = '#0a0a0a';
+          revealBtn.style.color = '#ffffff';
+          revealBtn.style.cursor = 'pointer';
+          revealBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          revealBtn.addEventListener('click', () => this.plugin.revealFile(this.plugin.artifactPath(rel)));
+          right.appendChild(revealBtn);
+          row.appendChild(right);
+          artifactsTab.appendChild(row);
+        }
+        root.appendChild(artifactsTab);
+
+        const statusDiv = document.createElement('div');
+        statusDiv.id = 'status';
+        statusDiv.className = 'notice';
+        statusDiv.style.display = 'none';
+        statusDiv.style.marginTop = '16px';
+        statusDiv.style.borderLeft = '4px solid #0a0a0a';
+        statusDiv.style.background = '#f9f9f9';
+        root.appendChild(statusDiv);
+
+        this.refreshRows();
+        this.refreshIntegrated();
+        this.refreshMappings();
+        this.updateInfobox();
+        this.makeTableResizable(document.querySelector('#tab-conflicts table'));
+        this.makeTableResizable(document.querySelector('#tab-integrated table'));
+        this.makeTableResizable(document.querySelector('#tab-mappings table'));
+        this.makeTableSortable(document.querySelector('#tab-conflicts table'));
+        this.makeTableSortable(document.querySelector('#tab-integrated table'));
+        this.makeTableSortable(document.querySelector('#tab-mappings table'));
+      },
+
+      refreshRows() {
+        const tbody = document.getElementById('rows');
+        if (!tbody) return;
+        tbody.textContent = '';
+        const needle = (document.getElementById('search')?.value || '').toLowerCase();
+        const filtered = this.rows.filter(row => `${row.source} ${row.status} ${row.title} ${row.detail || ''} ${(row.candidates || []).map(c => `${c.citation_key} ${c.title}`).join(' ')}`.toLowerCase().includes(needle)).slice(0,300);
+        if (!filtered.length) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 6;
+          td.textContent = 'No conflicts match the filter.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          return;
+        }
+        for (let idx = 0; idx < filtered.length; idx++) {
+          const row = filtered[idx];
+          const globalIndex = this.rows.indexOf(row);
+          const tr = document.createElement('tr');
+          const tdSource = document.createElement('td');
+          tdSource.textContent = row.source;
+          tr.appendChild(tdSource);
+          const tdStatus = document.createElement('td');
+          const pill = document.createElement('span');
+          pill.className = 'pill';
+          pill.textContent = row.status;
+          tdStatus.appendChild(pill);
+          tr.appendChild(tdStatus);
+          const tdCount = document.createElement('td');
+          tdCount.textContent = String(row.count);
+          tr.appendChild(tdCount);
+          const tdTitle = document.createElement('td');
+          tdTitle.textContent = row.title;
+          tdTitle.title = row.title;
+          tr.appendChild(tdTitle);
+          const tdDetail = document.createElement('td');
+          if (row.detail) {
+            tdDetail.textContent = row.detail;
+          } else if (row.candidates && row.candidates.length) {
+            const top = row.candidates[0];
+            const cite = top.citation_key || top.key || top.item_id || '';
+            tdDetail.textContent = `${row.candidates.length} suggestion(s) — top: ${cite} (${top.score ? Math.round(top.score*100)+'%' : '—'})`;
+            tdDetail.title = row.candidates.slice(0,4).map(c=> `${c.citation_key||c.key}: ${c.title}`).join('\n');
+          } else {
+            tdDetail.textContent = 'No candidates';
+          }
+          tdDetail.style.fontSize='11px';
+          tdDetail.style.color='#444';
+          tr.appendChild(tdDetail);
+          const tdActions = document.createElement('td');
+          tdActions.className = 'row-actions';
+          tdActions.style.minWidth='260px';
+          if (row.candidates && row.candidates.length) {
+            const list = document.createElement('div');
+            list.className = 'candidate-list';
+            for (let i=0;i<row.candidates.length;i++) {
+              const c = row.candidates[i];
+              const opt = document.createElement('div');
+              opt.className = 'candidate-option';
+              const span = document.createElement('span');
+              span.textContent = `${c.citation_key || c.key || c.item_id} · ${c.title || ''} ${c.score ? `(${Math.round(c.score*100)}%)` : ''}`;
+              span.title = `${c.citation_key || c.key || c.item_id}: ${c.title || ''} — ${c.reason || ''}`;
+              const btn = document.createElement('button');
+              btn.textContent = 'Use';
+              btn.title = `Use ${c.citation_key || c.key}`;
+              btn.addEventListener('click', () => this.saveCandidateAt(globalIndex, i));
+              opt.appendChild(span);
+              opt.appendChild(btn);
+              list.appendChild(opt);
+            }
+            tdActions.appendChild(list);
+          } else {
+            const noCand = document.createElement('div');
+            noCand.className='muted';
+            noCand.style.fontSize='11px';
+            noCand.textContent='No suggestions — enter custom key below.';
+            tdActions.appendChild(noCand);
+          }
+          const manualRow = document.createElement('div');
+          manualRow.className='manual-row';
+          const manualInput = document.createElement('input');
+          manualInput.id=`manual-${globalIndex}`;
+          manualInput.placeholder='or enter any citekey / Zotero key / ID';
+          manualInput.title='Examples: deleuze1987  |  JTDWDKRH  |  51395';
+          manualRow.appendChild(manualInput);
+          const btnManual = document.createElement('button');
+          btnManual.textContent='Use Custom';
+          btnManual.className='row-btn';
+          btnManual.addEventListener('click', () => this.saveManualCandidate(globalIndex));
+          manualRow.appendChild(btnManual);
+          tdActions.appendChild(manualRow);
+          const btnIgnore = document.createElement('button');
+          btnIgnore.textContent = 'Ignore Title';
+          btnIgnore.className = 'row-btn';
+          btnIgnore.style.marginTop='6px';
+          btnIgnore.addEventListener('click', () => this.ignore(globalIndex));
+          tdActions.appendChild(btnIgnore);
+          tr.appendChild(tdActions);
+          tbody.appendChild(tr);
+        }
+      },
+    };
+  </script>
+</head>
+<body onload="KindleManager.initSafe()">
+  <div id="root">Loading Kindle Zotero Importer...</div>
+</body>
+</html>
