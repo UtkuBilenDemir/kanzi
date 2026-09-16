@@ -1,7 +1,7 @@
 # Kindle Zotero Importer
 
-> [!CAUTION]
-> **Disclaimer: This project has been heavily vibecoded.**
+> [!CAUTION] Disclaimer
+> **This project has been heavily vibecoded.**
 
 
 Import Kindle `My Clippings.txt` highlights into Zotero as native annotations; directly inside Zotero, no terminal needed.
