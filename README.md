@@ -2,7 +2,7 @@
 
 Import Kindle `My Clippings.txt` highlights into Zotero as native annotations — directly inside Zotero, no terminal needed.
 
-> If this saves you time, please consider a small donation — [please give me money ♥](https://github.com/sponsors/UtkuBilenDemir) (also [PayPal](https://www.paypal.me/UtkuBilenDemir) · [Ko-fi](https://ko-fi.com/utkubilen))
+> If this saves you time, please consider a small donation — [please give me money+](https://github.com/sponsors/UtkuBilenDemir) (also [PayPal](https://www.paypal.me/UtkuBilenDemir) · [Ko-fi](https://ko-fi.com/utkubilen))
 
 ## Install (30 seconds)
 

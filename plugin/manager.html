@@ -221,7 +221,7 @@
         } else {
           html += `<div style="margin-top:6px; color:#555;">No pending mappings — choose a candidate in Conflicts or delete in Mappings, then re-import.</div>`;
         }
-        html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #999; text-align:center;"><a href="#" onclick="try{Zotero.launchURL('https://github.com/sponsors/UtkuBilenDemir')}catch(e){window.open('https://github.com/sponsors/UtkuBilenDemir','_blank')} return false;" style="font-size:11px; color:#555; text-decoration:underline; font-family:'iA Writer Duo', ui-monospace, monospace;">please give me money ♥ — support this work</a></div>`;
+        html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #999; text-align:center;"><button onclick="try{Zotero.launchURL('https://github.com/sponsors/UtkuBilenDemir')}catch(e){window.open('https://github.com/sponsors/UtkuBilenDemir','_blank')}" style="padding:6px 12px; border:1px solid #0a0a0a; background:#0a0a0a; color:#fff; cursor:pointer; font-family:'iA Writer Duo', ui-monospace, monospace; font-size:12px;">please give me money+</button></div>`;
         box.innerHTML = html;
         box.style.display = 'block';
       },
