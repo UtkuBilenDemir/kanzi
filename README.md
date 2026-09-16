@@ -3,9 +3,10 @@
 > [!CAUTION]
 > **Disclaimer: This project has been heavily vibecoded.**
 
-[<img src="https://img.shields.io/badge/please%20give%20me%20money+-red?style=for-the-badge" alt="please give me money+">](https://github.com/sponsors/UtkuBilenDemir)
 
 Import Kindle `My Clippings.txt` highlights into Zotero as native annotations; directly inside Zotero, no terminal needed.
+
+[<img src="https://img.shields.io/badge/please%20give%20me%20money+-red?style=for-the-badge" alt="please give me money+">](https://github.com/sponsors/UtkuBilenDemir)
 
 ## Install (30 seconds)
 
