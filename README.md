@@ -1,6 +1,6 @@
 # Kindle Zotero Importer
 
-> [!CAUTION] Disclaimer
+> [!DISCLAIMER]
 > **This project has been heavily vibecoded.**
 
 
