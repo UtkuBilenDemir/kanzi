@@ -2,93 +2,47 @@
 
 Import Kindle `My Clippings.txt` highlights into Zotero as native annotations — directly inside Zotero, no terminal needed.
 
-The hybrid Zotero plugin (`plugin/`) owns the UI and writes annotations through Zotero's native APIs. The Python pipeline (`src/kindle_zotero_importer/`) does parsing, matching, and EPUB/PDF positioning.
+> If this saves you time, please consider a small donation — [please give me money ♥](https://github.com/sponsors/UtkuBilenDemir) (also [PayPal](https://www.paypal.me/UtkuBilenDemir) · [Ko-fi](https://ko-fi.com/utkubilen))
 
-## What it does now (0.6.4)
+## Install (30 seconds)
 
-- **One Tools entry**: `Tools → Kindle Zotero Importer…` opens a manager window (`chrome://kindle-zotero-importer/content/manager.html`).
-- **File picker + staged progress**: choose your cumulative `My Clippings.txt` → live stage, percent, elapsed, `plugin-progress.json` (`Reading clippings → Indexing Zotero → Matching → Building plan → Positioning EPUB → Positioning PDF → Finalizing → Saving`).
-- **Incremental by default**: hashes each clipping `sha256(title|raw_detail|text)[:16]` (`src/kindle_zotero_importer/clippings.py:98`). Only new/changed `id`s (`new_ids - prev_integrated_ids`) go through expensive `pdftohtml`/`pdftotext` (`src/kindle_zotero_importer/pdf_position.py:120,197`). Already integrated `kindle-id:<id>` tags (`src/kindle_zotero_importer/final_plan.py:44`) are skipped. Check `Full re-import from scratch` to ignore incremental and re-process all 2379.
-- **Integrated tab**: last `import-plan.final.json` annotations (`975` in current artifacts) with `Kindle Title | Citekey | Highlight Text | Added On | Integrated | Page`, filterable, newest `Integrated` first.
-- **Conflicts tab**: unresolved title matches (`matched`/`ignored` filtered out). Each row shows `Source | Status | Count | Kindle Title | Candidates / Detail` (`N suggestion(s) — top: citekey (%)`) and an explicit `candidate-list` — each candidate `citekey · title (score%)` with its own `Use` button (`saveCandidateAt`). Free-form `or enter any citekey / Zotero key / ID` + `Use Custom` + `Ignore Title`. If you map `chabot2013` for one `simondon` variant, it offers to apply the same mapping to other variants sharing that candidate and hides them immediately.
-- **Mappings tab**: persistent `match-overrides.json` (`38` entries) with `Kindle Title | Resolution | Status | Count | Date | Action`, sorted by `updated_at` newest first (`plugin/bootstrap.js:288` `created_at`/`updated_at` ISO), filterable, `Delete` per row returns title to `Conflicts` after next `Re-import`.
-- **Re-import bar**: after any `Use`/`Use Custom`/`Ignore` or `Delete`, a `Re-import with saved overrides` bar appears reusing `lastClippingsPath` (`plugin/bootstrap.js:734` `runManagedImportWithPath`) or prompting for file. Explains why re-import is needed (new `citation_key` → new attachment → new `epubcfi`/`pdf rect`/`sortIndex`).
-- **Settings tab**: editable `Project directory`, `Python`, `Zotero DB`, `Zotero storage` (`setting-*` ids) + `Save Settings` → `plugin/bootstrap.js:315` `saveSettingsFromManager` writes prefs + `plugin-config.json`.
-- **Artifacts tab**: per-row `Open`/`Reveal` for `docs/mismatch-review.md`, `match-overrides.json`, `import-plan.*.json`, `plugin-summary.json`.
-- **Theme**: black `#0a0a0a` over white `#ffffff` `iA Writer Duo` monospace, `table-layout:fixed` with draggable `div.resizer` (`plugin/manager.html:270`) and sortable `th` (`▲/▼`) for all tables, selectable text.
+1. Download `kindle-zotero-importer.xpi` from [Releases](../../releases) (latest `0.6.4`, or `0.6.4-beta` for preview).
+2. In Zotero: `Tools → Plugins → gear → Install Plugin From File…` → pick the `.xpi` → restart Zotero.
+3. `Tools → Kindle Zotero Importer…` to open the manager.
 
-## Install
-
-```sh
-python scripts/build_plugin.py
-# → dist/kindle-zotero-importer.xpi  (manifest 0.6.4, Zotero 6.999–10.0.*)
-```
-
-In Zotero 10: `Tools → Plugins → gear → Install Plugin From File…` → `dist/kindle-zotero-importer.xpi` → restart → `Tools → Kindle Zotero Importer…`.
-
-`plugin/manifest.json:11` `update_url` `https://github.com/UtkuBilenDemir/kindle-zotero_importer/releases/latest/download/updates.json` enables auto-update.
+Works with Zotero 7–10, macOS/Windows/Linux, PDF and EPUB.
 
 ## Use
 
-1. `Tools → Kindle Zotero Importer…` → `Choose My Clippings.txt` (cumulative file).
-2. Keep manager open for `Positioning … (incremental)` progress and `Result` (`created`/`already present`/`updated`/`failed`/`deletedForIncremental`).
-3. `Conflicts` → pick `Use` per candidate or `Use Custom` with any `citation_key` (`deleuze1987`), 8-char `Zotero key` (`JTDWDKRH`), or numeric `item_id`; use `Ignore Title` for titles to skip.
-4. `Re-import with saved overrides` (uses last file, or prompts) → re-matches/positions only the delta and writes `kindle-import` + `kindle-id:<hash>` tagged annotations.
-5. `Integrated` to verify highlights (`Added On` Kindle date, `Integrated` UTC now, `Citekey` always visible), `Mappings` to review/delete established overrides.
+1. **Choose your file** — click `Choose My Clippings.txt` and pick your *cumulative* `My Clippings.txt` from Kindle (`/Documents/My Clippings.txt`). Keep the window open — you’ll see live progress.
+2. **Check Integrated** — after the run, `Integrated` shows what was imported (`Highlight Text`, `Citekey`, `Added On`, `Integrated`, `Page`). Filter to find anything.
+3. **Fix Conflicts** — if a Kindle title didn’t match a Zotero item, `Conflicts` shows it with up to 3 suggestions `citekey · title (score%)`. Click `Use` on the right one, or type any `citation key` / `Zotero key` / `Item ID` under `Use Custom`, or `Ignore Title` to skip it forever. If you map `chabot2013` for one `Simondon` variant, it will offer to apply the same mapping to the other variants with that candidate.
+4. **Re-import** — after you’ve fixed one or more titles, click `↻ Re-import with saved overrides` (re-uses the last file, or asks for it). Only new/changed highlights are re-positioned — already integrated ones are skipped, so the second run is fast. Check `Full re-import from scratch` only if you want to rebuild everything.
+5. **Mappings** — see all titles you’ve approved or ignored, newest first, with date. `Delete` any entry to send it back to `Conflicts` for re-matching.
+6. **Settings / Artifacts** — change `Python`/`Zotero DB` paths and `Save Settings`, or `Open`/`Reveal` any generated file (`mismatch-review.md`, `match-overrides.json`, …).
 
-For title variants (`gilbert-simondon…` vs `On the Mode… (Univocal)` both candidate `simondon2017a`/`chabot2013`), mapping one offers to apply to the others sharing that candidate — or map them individually; they clear from `Conflicts` immediately and after `Re-import` are `matched` in `matches.json` and absent from `match-overrides.generated.json`.
+Your choices are saved in `match-overrides.json` in the project folder — back it up, share it, or delete an entry to undo a mapping.
 
-For full rebuild, check `Full re-import from scratch` in the run-panel.
+## Tips
 
-## CLI (for debugging)
+- Keep `My Clippings.txt` cumulative (don’t clear it on the Kindle). The importer remembers what’s already integrated via `kindle-id:<hash>` tags, so re-imports are incremental.
+- If a highlight is positioned in the wrong place, check that the Zotero item has the correct PDF/EPUB attached (not a link). `Matched-title-no-attachment` in `Conflicts` means that.
+- `Full re-import` is only needed if you changed many mappings at once or want to rebuild from scratch.
 
-```sh
-python -m kindle_zotero_importer run "/path/to/My Clippings.txt" --workdir . --db ~/Zotero/zotero.sqlite --storage-root ~/Zotero/storage --overrides match-overrides.json --summary-output plugin-summary.json --pretty
-python -m kindle_zotero_importer run ... --full   # ignore incremental
-PYTHONPATH=src python -m kindle_zotero_importer parse "/path/to/My Clippings.txt" --pretty | head
-```
-
-`--progress-output plugin-progress.json` drives the manager progress bar.
-
-PDF positioning uses Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`) plus `qpdf --decrypt` fallback; EPUB uses `epubcfi`.
-
-## Safety Rule
-
-Never write directly to `zotero.sqlite`. Python is read-only for indexing; writes are only via `Zotero.Annotations.saveFromJSON` / `eraseTx` in `plugin/bootstrap.js:975` `writeAnnotations`.
-
-## Releases — including beta
-
-GitHub Releases are built from `dist/kindle-zotero-importer.xpi`:
+## For developers / CLI
 
 ```sh
-python scripts/build_plugin.py
-# tag and push
-git tag v0.6.4 && git push origin v0.6.4
-# GitHub → Releases → Draft a new release → Tag v0.6.4 → Title 0.6.4 → Attach dist/kindle-zotero-importer.xpi
-# Generate updates.json:
-# {
-#   "addons": {
-#     "kindlezoteroimporter@utkubilen.de": {
-#       "updates": [{
-#         "version": "0.6.4",
-#         "update_link": "https://github.com/UtkuBilenDemir/kindle-zotero_importer/releases/download/v0.6.4/kindle-zotero-importer.xpi",
-#         "applications": {"zotero": {"strict_min_version": "6.999"}}
-#       }]
-#     }
-#   }
-# }
-# upload updates.json to the same release (update_url points to /releases/latest/download/updates.json)
+python scripts/build_plugin.py  # → dist/kindle-zotero-importer.xpi
+python -m kindle_zotero_importer run "/path/to/My Clippings.txt" --workdir . --pretty
+python -m kindle_zotero_importer run ... --full  # ignore incremental, re-process all
 ```
 
-For a **beta/pre-release**: on the GitHub Release form check `Set as a pre-release` and use a tag like `v0.6.4-beta.1` with `version` `0.6.4-beta.1` in `plugin/manifest.json:4` and `updates.json`. Zotero will offer it as an update only to users on that channel; stable `v0.6.4` stays `latest`. You can also mark `This is a pre-release` without changing `update_url` — `strict_max_version` `10.0.*` already allows beta testing in Zotero 10.
+PDF positioning uses Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`) + `qpdf` fallback; EPUB uses CFI. Zotero writes are only via `Zotero.Annotations` — never direct `zotero.sqlite` writes.
 
-## Donations
+## Releases
 
-Zotero has no built-in plugin donation. Add your sponsor link to `README.md` and `plugin/manifest.json:6` `homepage_url`, and to the manager `infobox` (`plugin/manager.html:485`). Recommended: GitHub Sponsors (`https://github.com/sponsors/UtkuBilenDemir`) or Ko-fi/PayPal/OpenCollective. The `Donate` button in `Plugins` manager comes from `aboutURL` if you add `"aboutURL": "https://github.com/sponsors/…"` to `manifest.json`.
+Stable releases are on `Releases` with `kindle-zotero-importer.xpi` + `updates.json` attached. Pre-releases (`beta`) are marked `Pre-release` on GitHub. Zotero auto-updates from `releases/latest/download/updates.json`.
 
-## Project layout
+## Support
 
-- `plugin/` — hybrid bootstrap plugin (`bootstrap.js`, `manager.html`, `manifest.json`, `prefs.js`)
-- `src/kindle_zotero_importer/` — `clippings.py`, `zotero_index.py`, `matcher.py`, `import_plan.py`, `epub_position.py`, `pdf_position.py`, `final_plan.py`, `cli.py`
-- `scripts/build_plugin.py` — reproducible XPI builder
-- `match-overrides.json` — persistent title → `citation_key`/`zotero_key`/`ignore` mappings (now with `created_at`/`updated_at`, sorted newest first)
+If it helps your research, a small donation keeps the time for maintenance: [please give me money ♥](https://github.com/sponsors/UtkuBilenDemir). Issues and pull requests welcome at [Issues](../../issues).
