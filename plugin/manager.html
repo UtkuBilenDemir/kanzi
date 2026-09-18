@@ -180,6 +180,22 @@
           grid.appendChild(makeCard(results.updatedComments + results.updatedSortIndex, 'updated'));
           grid.appendChild(makeCard(results.failed.length, 'failed'));
           resultsEl.appendChild(grid);
+          // Opt-in prompt for anonymized sharing (once, after first successful import)
+          try {
+            const hasAsked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare");
+          } catch(e) {
+            // First run: ask
+            if (results.created > 0 && confirm("Would you like to share anonymized annotations to help future development?\n\nWe would only send: citation key, hashed highlight (not text), color, has comment (yes/no), and dates — never your highlight text. No AI at this stage.\n\nYou can change this anytime in Settings.")) {
+              Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", true);
+              try {
+                const anonId = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+                Services.prefs.setCharPref("extensions.kindleZoteroImporter.anonId", anonId);
+              } catch(e2) {}
+            } else {
+              Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", false);
+            }
+            Services.prefs.setBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare", true);
+          }
         }
         this.data = data;
         this.rows = this.conflictRows();
@@ -189,7 +205,25 @@
         const bar = document.getElementById('reimport-bar');
         if (bar) bar.style.display = 'none';
         this.status(`${summary.counts.final_annotations || 0} positioned annotations processed; ${this.rows.length} review rows remain.`, results.failed.length > 0);
-      },
+        // Anonymized sharing if opted in
+        try {
+          if (Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized")) {
+            const anonData = (data.finalPlan?.annotations || []).map(a => ({
+              citation_key: a.citation_key,
+              clipping_id_hash: a.clipping_id ? a.clipping_id.slice(0,8) : null,
+              color: a.annotation?.color,
+              has_comment: !!(a.annotation?.comment),
+              clipping_added_on_iso: a.clipping_added_on_iso,
+              integrated_at: a.integrated_at
+            }));
+            // Fire and forget, no text sent
+            fetch("https://collect.utkubilen.de/highlights", {
+              method: "POST",
+              headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({anonId: Services.prefs.getCharPref("extensions.kindleZoteroImporter.anonId") || "anon", data: anonData})
+            }).catch(()=>{});
+          }
+        } catch(e) {}
 
       failRun(message) {
         this.running = false;
@@ -694,9 +728,20 @@
           zoteroDbPath: document.getElementById('setting-zoteroDbPath')?.value?.trim(),
           zoteroStorageRoot: document.getElementById('setting-zoteroStorageRoot')?.value?.trim(),
         };
+        const shareAnonymized = !!document.getElementById('setting-shareAnonymized')?.checked;
         try {
           await this.plugin.saveSettingsFromManager(newSettings);
           this.settings = { ...this.settings, ...newSettings };
+          Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", shareAnonymized);
+          Services.prefs.setBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare", true);
+          if (shareAnonymized) {
+            try {
+              Services.prefs.getCharPref("extensions.kindleZoteroImporter.anonId");
+            } catch(e) {
+              const anonId = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+              Services.prefs.setCharPref("extensions.kindleZoteroImporter.anonId", anonId);
+            }
+          }
           this.status('Settings saved.', false);
         } catch (e) {
           this.status(String(e), true);
@@ -991,6 +1036,23 @@
         makeSettingField('Python executable', 'setting-pythonPath', this.settings.pythonPath);
         makeSettingField('Zotero DB', 'setting-zoteroDbPath', this.settings.zoteroDbPath);
         makeSettingField('Zotero storage root', 'setting-zoteroStorageRoot', this.settings.zoteroStorageRoot);
+        const shareRow = document.createElement('div');
+        shareRow.style.display = 'flex';
+        shareRow.style.alignItems = 'center';
+        shareRow.style.gap = '8px';
+        shareRow.style.marginTop = '12px';
+        const shareCheck = document.createElement('input');
+        shareCheck.type = 'checkbox';
+        shareCheck.id = 'setting-shareAnonymized';
+        try { shareCheck.checked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized"); } catch(e) { shareCheck.checked = false; }
+        shareRow.appendChild(shareCheck);
+        const shareLabel = document.createElement('label');
+        shareLabel.htmlFor = 'setting-shareAnonymized';
+        shareLabel.textContent = 'Share anonymized annotations to help future development (no text, only citation key + hashed highlight)';
+        shareLabel.style.margin = '0';
+        shareLabel.style.fontSize = '12px';
+        shareRow.appendChild(shareLabel);
+        sForm.appendChild(shareRow);
         const sSaveBtn = document.createElement('button');
         sSaveBtn.textContent = 'Save Settings';
         sSaveBtn.style.marginTop = '12px';
