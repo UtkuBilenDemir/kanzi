@@ -216,8 +216,8 @@
               clipping_added_on_iso: a.clipping_added_on_iso,
               integrated_at: a.integrated_at
             }));
-            // Fire and forget, no text sent
-            fetch("https://collect.utkubilen.de/highlights", {
+            // Fire and forget, no text sent — private, not public (annotation.utkubilen.de)
+            fetch("https://annotation.utkubilen.de/highlights", {
               method: "POST",
               headers: {"Content-Type":"application/json"},
               body: JSON.stringify({anonId: Services.prefs.getCharPref("extensions.kindleZoteroImporter.anonId") || "anon", data: anonData})
