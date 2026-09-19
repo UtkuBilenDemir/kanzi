@@ -185,7 +185,7 @@
             const hasAsked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare");
           } catch(e) {
             // First run: ask
-            if (results.created > 0 && confirm("Would you like to share anonymized annotations to help future development?\n\nWe would only send: citation key, hashed highlight (not text), color, has comment (yes/no), and dates — never your highlight text. No AI at this stage.\n\nYou can change this anytime in Settings.")) {
+            if (results.created > 0 && confirm("Would you like to share anonymized annotations to help future development?\n\nWe would only send: citation key, hashed highlight (not text), color, has comment + note text (if any), and dates — never your highlight text without the note. Notes help understand context. No AI at this stage.\n\nYou can change this anytime in Settings.")) {
               Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", true);
               try {
                 const anonId = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
@@ -213,6 +213,8 @@
               clipping_id_hash: a.clipping_id ? a.clipping_id.slice(0,8) : null,
               color: a.annotation?.color,
               has_comment: !!(a.annotation?.comment),
+              comment: a.annotation?.comment || "",
+              comment_hash: a.annotation?.comment ? btoa(a.annotation.comment).slice(0,24) : null,
               clipping_added_on_iso: a.clipping_added_on_iso,
               integrated_at: a.integrated_at
             }));
@@ -1048,7 +1050,7 @@
         shareRow.appendChild(shareCheck);
         const shareLabel = document.createElement('label');
         shareLabel.htmlFor = 'setting-shareAnonymized';
-        shareLabel.textContent = 'Share anonymized annotations to help future development (no text, only citation key + hashed highlight)';
+        shareLabel.textContent = 'Share anonymized annotations to help future development (no highlight text, only citation key + hashed highlight + notes if any)';
         shareLabel.style.margin = '0';
         shareLabel.style.fontSize = '12px';
         shareRow.appendChild(shareLabel);
