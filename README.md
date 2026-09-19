@@ -43,6 +43,8 @@ python -m kindle_zotero_importer run ... --full  # ignore incremental; re-proces
 
 PDF positioning uses Poppler (`pdftotext`; `pdftohtml`; `pdfinfo`) + `qpdf` fallback; EPUB uses CFI. Zotero writes are only via `Zotero.Annotations`; never direct `zotero.sqlite` writes.
 
+Anonymized sharing is **on by default** to help future development (only `citation key`; hashed highlight; `color`; `has comment` + note; `added_on`; `integrated_at`; never raw highlight text); opt out anytime in `Manager → Settings` → uncheck `Share anonymized annotations` (also `annotation.utkubilen.de`, private, no AI).
+
 ## Releases
 
 Stable releases are on `Releases` with `kindle-zotero-importer.xpi` + `updates.json` attached. Pre-releases (`beta`) are marked `Pre-release` on GitHub. Zotero auto-updates from `releases/latest/download/updates.json`.

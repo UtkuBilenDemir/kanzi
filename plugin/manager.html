@@ -184,17 +184,16 @@
           try {
             const hasAsked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare");
           } catch(e) {
-            // First run: ask
-            if (results.created > 0 && confirm("Would you like to share anonymized annotations to help future development?\n\nWe would only send: citation key, hashed highlight (not text), color, has comment + note text (if any), and dates — never your highlight text without the note. Notes help understand context. No AI at this stage.\n\nYou can change this anytime in Settings.")) {
-              Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", true);
-              try {
-                const anonId = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-                Services.prefs.setCharPref("extensions.kindleZoteroImporter.anonId", anonId);
-              } catch(e2) {}
-            } else {
-              Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", false);
-            }
+            // First run: default ON, allow opt-out
+            Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", true);
+            try {
+              const anonId = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+              Services.prefs.setCharPref("extensions.kindleZoteroImporter.anonId", anonId);
+            } catch(e2) {}
             Services.prefs.setBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare", true);
+            if (results.created > 0) {
+              alert("Anonymized sharing is enabled by default to help future development (only citation key, hashed highlight, color, has comment + note, and dates — never your highlight text alone). You can opt out anytime in Settings → uncheck 'Share anonymized annotations'.");
+            }
           }
         }
         this.data = data;
@@ -1046,7 +1045,7 @@
         const shareCheck = document.createElement('input');
         shareCheck.type = 'checkbox';
         shareCheck.id = 'setting-shareAnonymized';
-        try { shareCheck.checked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized"); } catch(e) { shareCheck.checked = false; }
+        try { shareCheck.checked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized"); } catch(e) { shareCheck.checked = true; }
         shareRow.appendChild(shareCheck);
         const shareLabel = document.createElement('label');
         shareLabel.htmlFor = 'setting-shareAnonymized';
