@@ -19,7 +19,7 @@ from .zotero_index import build_zotero_index
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kindle-zotero-importer",
-        description="Generate Zotero import-plan data from Kindle clippings.",
+        description="Minimalist Kindle → Zotero importer. Primary command is `run`; others are developer utilities.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

@@ -4,26 +4,54 @@
   <meta charset="utf-8">
   <title>Kindle Zotero Importer</title>
   <style>
-    :root { color: #0a0a0a; background: #ffffff; font-family: 'iA Writer Duo', 'iA Writer Duos', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
-    #root { padding: 20px; max-width: 1600px; margin: 0 auto; background: #ffffff; color: #0a0a0a; line-height: 1.5; }
-    h1 { margin: 0 0 4px; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; font-family: 'iA Writer Duo', ui-monospace, monospace; }
-    h2 { margin: 24px 0 10px; border-bottom: 1px solid #0a0a0a; padding-bottom: 6px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
-    .tabs { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; border-bottom: 1px solid #0a0a0a; padding-bottom: 10px; }
-    .tab-button { padding: 6px 14px; border-radius: 0; border: 1px solid #0a0a0a; background: #ffffff; color: #0a0a0a; cursor: pointer; font-family: 'iA Writer Duo', ui-monospace, monospace; font-size: 13px; letter-spacing: 0.02em; }
-    .tab-button.active { background: #0a0a0a; color: #ffffff; }
+    /* Design Tokens — F (Cleaned D+B) — unified with chess tool 2026-09-21 */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    :root {
+      font-family: 'iA Writer Duo', 'iA Writer Duos', 'JetBrains Mono', ui-monospace, monospace;
+      color: #111;
+      background: #f8f8f8;
+      --bg: #f8f8f8;
+      --panel: #ffffff;
+      --panel-soft: #f0f0f0;
+      --line: #ddd;
+      --line-strong: #bbb;
+      --text: #111;
+      --muted: #666;
+      --faint: #999;
+      --accent: #111;
+      --accent-2: #111;
+      --accent-soft: #f0f0f0;
+      --danger: #a00;
+      --danger-soft: #fff0f0;
+      --shadow: 0 1px 4px rgba(0,0,0,.06);
+      --shadow-strong: 0 4px 12px rgba(0,0,0,.08);
+      --radius: 8px;
+      --pill-radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); }
+    #root { padding: 0 24px 24px; max-width: 1280px; margin: 0 auto; background: var(--bg); color: var(--text); line-height: 1.5; }
+    h1 { margin: 0 0 4px; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; font-family: inherit; color: var(--text); }
+    h2 { margin: 24px 0 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+    .tabs { display: flex; gap: 4px; margin: 16px 0 0; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+    .tab-button { padding: 12px 16px 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+    .tab-button.active { color: var(--accent); border-bottom-color: var(--accent); background: transparent; }
+    .tab-button:hover { color: var(--text); }
     .tab { display: none; }
-    .tab.active { display: block; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
-    .card { background: #ffffff; border: 1px solid #0a0a0a; border-radius: 0; padding: 12px; }
-    .card strong { display: block; font-size: 22px; font-weight: 700; }
-    label { display: block; margin: 9px 0 3px; font-weight: 600; }
-    input, textarea, select { width: 100%; box-sizing: border-box; padding: 7px; font-family: 'iA Writer Duo', ui-monospace, monospace; border: 1px solid #0a0a0a; background: #ffffff; color: #0a0a0a; }
+    .tab.active { display: block; padding-top: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
+    .card strong { display: block; font-size: 22px; font-weight: 700; color: var(--text); }
+    .card span { color: var(--muted); font-size: 12px; }
+    label { display: block; margin: 9px 0 3px; font-weight: 600; font-size: 12px; color: var(--text); }
+    input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px 10px; font-family: inherit; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(17,17,17,.06); }
     textarea { min-height: 72px; }
-    table { width: 100%; border-collapse: collapse; background: #ffffff; table-layout: fixed; border: 1px solid #0a0a0a; }
-    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid #d0d0d0; border-right: 1px solid #e8e8e8; padding: 8px 10px; font-size: 12.5px; overflow-wrap: anywhere; user-select: text; position: relative; }
-    th { background: #ffffff; color: #0a0a0a; position: sticky; top: 0; font-weight: 600; border-bottom: 1px solid #0a0a0a; z-index: 1; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); table-layout: fixed; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); padding: 10px 12px; font-size: 12.5px; overflow-wrap: anywhere; user-select: text; position: relative; }
+    th { background: var(--panel-soft); color: var(--muted); position: sticky; top: 0; font-weight: 600; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .06em; font-size: 10px; border-bottom: 1px solid var(--line); z-index: 1; }
     th .resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; user-select: none; }
-    th .resizer:hover { background: #0a0a0a; opacity: 0.15; }
+    th .resizer:hover { background: var(--accent); opacity: 0.15; }
     th:nth-child(1), td:nth-child(1) { width: 10%; }
     th:nth-child(2), td:nth-child(2) { width: 9%; }
     th:nth-child(3), td:nth-child(3) { width: 6%; }
@@ -37,31 +65,32 @@
     #tab-integrated th:nth-child(4), #tab-integrated td:nth-child(4) { width: 11%; }
     #tab-integrated th:nth-child(5), #tab-integrated td:nth-child(5) { width: 11%; }
     #tab-integrated th:nth-child(6), #tab-integrated td:nth-child(6) { width: 12%; }
-    .pill { display: inline-block; background: #0a0a0a; color: #ffffff; border-radius: 0; padding: 2px 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
-    .row-actions button, .row-actions .row-btn { margin: 2px; padding: 5px 10px; border: 1px solid #0a0a0a; border-radius: 0; background: #ffffff; color: #0a0a0a; cursor: pointer; font-size: 12px; font-family: 'iA Writer Duo', ui-monospace, monospace; }
-    .row-actions button:hover, .row-actions .row-btn:hover { background: #0a0a0a; color: #ffffff; }
-    .candidate-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
-    .candidate-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #0a0a0a; padding: 6px 8px; background: #ffffff; font-size: 12px; line-height: 1.3; }
-    .candidate-option:hover { background: #f4f4f4; }
-    .candidate-option span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .candidate-option button { flex-shrink: 0; padding: 3px 8px; font-size: 11px; border: 1px solid #0a0a0a; background: #0a0a0a; color: #ffffff; cursor: pointer; }
-    .candidate-option button:hover { background: #ffffff; color: #0a0a0a; }
-    .manual-row { display: flex; gap: 4px; margin-top: 6px; }
-    .manual-row input { flex: 1; min-width: 0; font-size: 12px; border: 1px solid #0a0a0a; }
-    .manual-row button { white-space: nowrap; flex-shrink: 0; }
-    .notice { background: #ffffff; border: 1px solid #0a0a0a; border-radius: 0; padding: 10px; margin: 10px 0; font-size: 13px; }
-    .run-panel { background: #ffffff; color: #0a0a0a; border: 1px solid #0a0a0a; border-radius: 0; padding: 18px; margin: 16px 0; }
-    .file-button { display: inline-block; min-width: 240px; padding: 11px 16px; margin-bottom: 8px; font-size: 14px; font-weight: 700; text-align: center; color: #ffffff; background: #0a0a0a; border: 1px solid #0a0a0a; border-radius: 0; cursor: pointer; font-family: 'iA Writer Duo', ui-monospace, monospace; letter-spacing: 0.02em; }
-    .file-button:hover, .file-button:focus { background: #ffffff; color: #0a0a0a; outline: 1px solid #0a0a0a; }
-    .file-button.disabled { opacity: 0.4; cursor: wait; }
-    .run-panel progress { width: 100%; height: 14px; margin: 12px 0 5px; accent-color: #0a0a0a; }
-    .run-meta { display: flex; justify-content: space-between; gap: 12px; color: #0a0a0a; font-size: 12px; }
-    .ok { color: #0a7a0a; }
-    .err { color: #a00; }
-    .muted { color: #555; font-size: 12px; }
-    .highlight-text { max-width: 520px; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.45; font-family: 'iA Writer Duo', ui-monospace, monospace; }
-    .integrated-meta { font-size: 10.5px; color: #555; font-family: 'iA Writer Duo', ui-monospace, monospace; }
-    ::selection { background: #0a0a0a; color: #ffffff; }
+    .pill { display: inline-block; background: var(--accent); color: white; border-radius: var(--pill-radius); padding: 3px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--accent); }
+    .row-actions button, .row-actions .row-btn { margin: 2px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); cursor: pointer; font-size: 12px; font-family: inherit; transition: all .12s; }
+    .row-actions button:hover, .row-actions .row-btn:hover { border-color: var(--line-strong); background: var(--panel-soft); }
+    .candidate-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+    .candidate-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: var(--panel); font-size: 12px; line-height: 1.3; box-shadow: var(--shadow); }
+    .candidate-option:hover { background: var(--panel-soft); border-color: var(--line-strong); }
+    .candidate-option span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+    .candidate-option button { flex-shrink: 0; padding: 4px 10px; font-size: 11px; border-radius: var(--pill-radius); border: 1px solid var(--accent); background: var(--accent); color: white; cursor: pointer; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .06em; }
+    .candidate-option button:hover { background: var(--panel); color: var(--accent); }
+    .manual-row { display: flex; gap: 6px; margin-top: 8px; }
+    .manual-row input { flex: 1; min-width: 0; font-size: 12px; }
+    .manual-row button { white-space: nowrap; flex-shrink: 0; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--accent); background: var(--accent); color: white; cursor: pointer; font-weight: 600; }
+    .manual-row button:hover { background: var(--panel); color: var(--accent); }
+    .notice { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin: 10px 0; font-size: 13px; box-shadow: var(--shadow); }
+    .run-panel { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin: 16px 0; box-shadow: var(--shadow); }
+    .file-button { display: inline-block; min-width: 240px; padding: 11px 16px; margin-bottom: 8px; font-size: 13px; font-weight: 600; text-align: center; color: white; background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius); cursor: pointer; font-family: inherit; letter-spacing: 0.02em; box-shadow: 0 2px 10px rgba(0,0,0,.12); transition: all .12s; }
+    .file-button:hover, .file-button:focus { background: #1a1a1a; transform: translateY(-1px); box-shadow: var(--shadow-strong); outline: none; }
+    .file-button.disabled { opacity: 0.4; cursor: wait; transform: none; }
+    .run-panel progress { width: 100%; height: 6px; margin: 12px 0 5px; accent-color: var(--accent); border-radius: 999px; }
+    .run-meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .06em; }
+    .ok { color: var(--accent); }
+    .err { color: var(--danger); }
+    .muted { color: var(--muted); font-size: 12px; }
+    .highlight-text { max-width: 520px; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.45; font-family: inherit; }
+    .integrated-meta { font-size: 10.5px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+    ::selection { background: var(--accent); color: white; }
   </style>
   <script>
     var KindleManager = {
@@ -251,12 +280,12 @@
         html += `<div>${integrated} integrated · ${conflicts} conflicts · ${pending} mappings</div>`;
         if (hasPendingReimport) {
           const info = document.getElementById('reimport-info')?.textContent || 'New mapping saved';
-          html += `<div style="margin-top:6px; padding-top:6px; border-top:1px solid #0a0a0a; color:#0a0a0a;">${this.esc(info)}</div>`;
-          html += `<div style="margin-top:6px;"><button onclick="KindleManager.reimportWithOverrides()" style="width:100%; padding:6px; border:1px solid #0a0a0a; background:#0a0a0a; color:#fff; cursor:pointer; font-family:'iA Writer Duo', ui-monospace, monospace;">↻ Re-import now</button></div>`;
+          html += `<div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--line); color:var(--text);">${this.esc(info)}</div>`;
+          html += `<div style="margin-top:6px;"><button onclick="KindleManager.reimportWithOverrides()" style="width:100%; padding:8px; border:1px solid var(--accent); background:var(--accent); color:white; cursor:pointer; font-family:inherit; border-radius:var(--radius); font-weight:600;">↻ Re-import now</button></div>`;
         } else {
-          html += `<div style="margin-top:6px; color:#555;">No pending mappings — choose a candidate in Conflicts or delete in Mappings, then re-import.</div>`;
+          html += `<div style="margin-top:6px; color:var(--muted);">No pending mappings — choose a candidate in Conflicts or delete in Mappings, then re-import.</div>`;
         }
-        html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #999; text-align:center;"><button onclick="try{Zotero.launchURL('https://github.com/sponsors/UtkuBilenDemir')}catch(e){window.open('https://github.com/sponsors/UtkuBilenDemir','_blank')}" style="padding:6px 12px; border:1px solid #0a0a0a; background:#0a0a0a; color:#fff; cursor:pointer; font-family:'iA Writer Duo', ui-monospace, monospace; font-size:12px;">please give me money+</button></div>`;
+        html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed var(--line); text-align:center;"><button onclick="try{Zotero.launchURL('https://github.com/sponsors/UtkuBilenDemir')}catch(e){window.open('https://github.com/sponsors/UtkuBilenDemir','_blank')}" style="padding:6px 12px; border:1px solid var(--accent); background:var(--accent); color:white; cursor:pointer; font-family:inherit; font-size:12px; border-radius:var(--pill-radius); font-weight:600;">please give me money+</button></div>`;
         box.innerHTML = html;
         box.style.display = 'block';
       },
@@ -541,8 +570,8 @@
           }
           el.style.display = 'block';
           el.className = 'notice';
-          el.style.borderLeft = error ? '4px solid #a00' : '4px solid #0a0a0a';
-          el.style.background = error ? '#fff0f0' : '#f9f9f9';
+          el.style.borderLeft = error ? '4px solid var(--danger)' : '4px solid var(--accent)';
+          el.style.background = error ? 'var(--danger-soft)' : 'var(--panel-soft)';
           el.textContent = message;
         }
       },
@@ -695,13 +724,14 @@
           const delBtn = document.createElement('button');
           delBtn.textContent = 'Delete';
           delBtn.title = 'Remove this override and return to Conflicts';
-          delBtn.style.padding = '3px 8px';
-          delBtn.style.border = '1px solid #a00';
-          delBtn.style.background = '#ffffff';
-          delBtn.style.color = '#a00';
+          delBtn.style.padding = '4px 10px';
+          delBtn.style.border = '1px solid var(--danger)';
+          delBtn.style.background = 'var(--panel)';
+          delBtn.style.color = 'var(--danger)';
           delBtn.style.cursor = 'pointer';
-          delBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          delBtn.style.fontFamily = 'inherit';
           delBtn.style.fontSize = '11px';
+          delBtn.style.borderRadius = 'var(--radius)';
           delBtn.addEventListener('click', () => this.deleteMapping(entry.clipping_title));
           tdAction.appendChild(delBtn);
           tr.appendChild(tdAction);
@@ -770,12 +800,14 @@
         infobox.id = 'infobox';
         infobox.style.minWidth = '260px';
         infobox.style.maxWidth = '380px';
-        infobox.style.border = '1px solid #0a0a0a';
-        infobox.style.background = '#ffffff';
+        infobox.style.border = '1px solid var(--line)';
+        infobox.style.background = 'var(--panel)';
         infobox.style.padding = '10px';
         infobox.style.fontSize = '12px';
         infobox.style.lineHeight = '1.4';
         infobox.style.display = 'none';
+        infobox.style.borderRadius = 'var(--radius)';
+        infobox.style.boxShadow = 'var(--shadow)';
         headerWrap.appendChild(infobox);
         root.appendChild(headerWrap);
         const panel = document.createElement('div');
@@ -842,7 +874,7 @@
         fullLabel.textContent = 'Full re-import from scratch (ignore incremental, re-process all)';
         fullLabel.style.margin = '0';
         fullLabel.style.fontSize = '12px';
-        fullLabel.style.color = '#0a0a0a';
+        fullLabel.style.color = 'var(--muted)';
         fullLabel.title = 'When checked, re-processes all 2379 clippings from scratch (slow). Unchecked = incremental (only new/changed highlights, fast).';
         fullRow.appendChild(fullLabel);
         panel.appendChild(fullRow);
@@ -937,11 +969,12 @@
         const reimportBar = document.createElement('div');
         reimportBar.id = 'reimport-bar';
         reimportBar.style.display = 'none';
-        reimportBar.style.border = '1px solid #0a0a0a';
-        reimportBar.style.background = '#0a0a0a';
-        reimportBar.style.color = '#ffffff';
+        reimportBar.style.border = '1px solid var(--accent)';
+        reimportBar.style.background = 'var(--panel-soft)';
+        reimportBar.style.color = 'var(--text)';
         reimportBar.style.padding = '10px';
         reimportBar.style.margin = '10px 0';
+        reimportBar.style.borderRadius = 'var(--radius)';
         const reimportText = document.createElement('span');
         reimportText.id = 'reimport-info';
         reimportText.textContent = 'Override saved — click to re-import.';
@@ -949,12 +982,14 @@
         const reimportBtn = document.createElement('button');
         reimportBtn.textContent = '↻ Re-import with saved overrides';
         reimportBtn.style.marginLeft = '10px';
-        reimportBtn.style.background = '#ffffff';
-        reimportBtn.style.color = '#0a0a0a';
-        reimportBtn.style.border = '1px solid #ffffff';
-        reimportBtn.style.padding = '4px 10px';
+        reimportBtn.style.background = 'var(--accent)';
+        reimportBtn.style.color = 'white';
+        reimportBtn.style.border = '1px solid var(--accent)';
+        reimportBtn.style.padding = '6px 12px';
         reimportBtn.style.cursor = 'pointer';
-        reimportBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+        reimportBtn.style.fontFamily = 'inherit';
+        reimportBtn.style.borderRadius = 'var(--pill-radius)';
+        reimportBtn.style.fontWeight = '600';
         reimportBtn.addEventListener('click', () => this.reimportWithOverrides());
         reimportBar.appendChild(reimportBtn);
         conflictsTab.appendChild(reimportBar);
@@ -1057,12 +1092,14 @@
         const sSaveBtn = document.createElement('button');
         sSaveBtn.textContent = 'Save Settings';
         sSaveBtn.style.marginTop = '12px';
-        sSaveBtn.style.padding = '6px 14px';
-        sSaveBtn.style.border = '1px solid #0a0a0a';
-        sSaveBtn.style.background = '#0a0a0a';
-        sSaveBtn.style.color = '#ffffff';
+        sSaveBtn.style.padding = '8px 14px';
+        sSaveBtn.style.border = '1px solid var(--accent)';
+        sSaveBtn.style.background = 'var(--accent)';
+        sSaveBtn.style.color = 'white';
         sSaveBtn.style.cursor = 'pointer';
-        sSaveBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+        sSaveBtn.style.fontFamily = 'inherit';
+        sSaveBtn.style.borderRadius = 'var(--radius)';
+        sSaveBtn.style.fontWeight = '600';
         sSaveBtn.addEventListener('click', () => this.saveSettings());
         sForm.appendChild(sSaveBtn);
         const sNotice = document.createElement('div');
@@ -1096,10 +1133,12 @@
           row.style.display = 'flex';
           row.style.justifyContent = 'space-between';
           row.style.alignItems = 'center';
-          row.style.border = '1px solid #0a0a0a';
-          row.style.padding = '6px 10px';
+          row.style.border = '1px solid var(--line)';
+          row.style.padding = '8px 12px';
           row.style.margin = '6px 0';
-          row.style.background = '#ffffff';
+          row.style.background = 'var(--panel)';
+          row.style.borderRadius = 'var(--radius)';
+          row.style.boxShadow = 'var(--shadow)';
           const left = document.createElement('div');
           left.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
           left.style.fontSize = '12px';
@@ -1110,21 +1149,26 @@
           right.style.gap = '4px';
           const openBtn = document.createElement('button');
           openBtn.textContent = 'Open';
-          openBtn.style.padding = '3px 8px';
-          openBtn.style.border = '1px solid #0a0a0a';
-          openBtn.style.background = '#ffffff';
+          openBtn.style.padding = '4px 10px';
+          openBtn.style.border = '1px solid var(--line)';
+          openBtn.style.background = 'var(--panel)';
           openBtn.style.cursor = 'pointer';
-          openBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          openBtn.style.fontFamily = 'inherit';
+          openBtn.style.borderRadius = 'var(--radius)';
+          openBtn.style.fontSize = '12px';
           openBtn.addEventListener('click', () => this.plugin.openArtifact(rel));
           right.appendChild(openBtn);
           const revealBtn = document.createElement('button');
           revealBtn.textContent = 'Reveal';
-          revealBtn.style.padding = '3px 8px';
-          revealBtn.style.border = '1px solid #0a0a0a';
-          revealBtn.style.background = '#0a0a0a';
-          revealBtn.style.color = '#ffffff';
+          revealBtn.style.padding = '4px 10px';
+          revealBtn.style.border = '1px solid var(--accent)';
+          revealBtn.style.background = 'var(--accent)';
+          revealBtn.style.color = 'white';
           revealBtn.style.cursor = 'pointer';
-          revealBtn.style.fontFamily = "'iA Writer Duo', ui-monospace, monospace";
+          revealBtn.style.fontFamily = 'inherit';
+          revealBtn.style.borderRadius = 'var(--radius)';
+          revealBtn.style.fontSize = '12px';
+          revealBtn.style.fontWeight = '600';
           revealBtn.addEventListener('click', () => this.plugin.revealFile(this.plugin.artifactPath(rel)));
           right.appendChild(revealBtn);
           row.appendChild(right);
@@ -1137,8 +1181,8 @@
         statusDiv.className = 'notice';
         statusDiv.style.display = 'none';
         statusDiv.style.marginTop = '16px';
-        statusDiv.style.borderLeft = '4px solid #0a0a0a';
-        statusDiv.style.background = '#f9f9f9';
+        statusDiv.style.borderLeft = '4px solid var(--accent)';
+        statusDiv.style.background = 'var(--panel-soft)';
         root.appendChild(statusDiv);
 
         this.refreshRows();
