@@ -415,6 +415,38 @@ def main(argv: list[str] | None = None) -> int:
             for c in new_clippings_list:
                 if c.id in prev_integrated_ids and c.title in _ov_for_inc:
                     to_process_ids.add(c.id)
+            # Also re-queue highlights whose bracket colour would change the annotation
+            # (so you can recolour a past highlight by adding [r]/[o] etc. to its note or highlight text)
+            if colour_map:
+                import re as _re
+                for c in new_clippings_list:
+                    if c.id not in prev_integrated_ids:
+                        continue
+                    # check highlight text and note text for leading [code]
+                    texts = [c.text or ""]
+                    # notes attached to this title may carry the bracket — check all notes for this title
+                    # simplest: if clipping is highlight, its comment (attached note) is in clippings payload; check that too if present
+                    # For incremental we don't yet have attached notes, so check raw clipping text and any note with same title
+                    # For now, check c.text and also any note text that would be attached (we can approximate by checking c.text only)
+                    # Better: check both c.text and the raw note text if kind==highlight and has comment
+                    has_bracket = False
+                    for t in [c.text or "", getattr(c, "comment", "") or ""]:
+                        m = _re.match(r"^\s*\[([^\]]+)\]\s*", t)
+                        if m and m.group(1).strip().lower() in {k.lower() for k in colour_map.keys()}:
+                            has_bracket = True
+                            break
+                    if has_bracket:
+                        to_process_ids.add(c.id)
+            # If colourMap itself changed since last run, re-queue all prev integrated (so Settings change recolours)
+            try:
+                prev_map = (prev_final_plan or {}).get("colourMap") or (prev_final_plan or {}).get("colorMap")
+                if colour_map is not None and prev_map is not None and dict(colour_map) != dict(prev_map):
+                    to_process_ids.update(prev_integrated_ids)
+                elif colour_map is not None and prev_map is None and len(colour_map) != len(DEFAULT_COLOUR_MAP):
+                    # custom map added where previously default — re-queue to apply
+                    to_process_ids.update(prev_integrated_ids)
+            except Exception:
+                pass
             # Also handle deleted overrides: if a previously integrated title's override was deleted,
             # its annotations should be deleted. Detect via previous final plan's titles vs current overrides.
             # For incremental, we don't have previous overrides, so we handle deletions via the main deletions list
@@ -441,6 +473,8 @@ def main(argv: list[str] | None = None) -> int:
                 plan = {"format": "kindle-zotero-importer.import-plan.v1", "items": []}
                 positioned_plan = {"format": plan["format"], "items": []}
                 final_plan = {"format": FINAL_FORMAT, "source_format": positioned_plan.get("format"), "annotation_count": 0, "skipped_counts": {}, "annotations": [], "deletions": [], "is_incremental": True, "incremental_stats": {"new_clippings": len(new_ids), "prev_integrated": len(prev_integrated_ids), "to_process": 0, "deletions": 0}}
+                final_plan["colourMap"] = colour_map if colour_map is not None else DEFAULT_COLOUR_MAP
+                final_plan["colorMap"] = final_plan["colourMap"]
                 mismatch_review = build_mismatch_review(positioned_plan, matches)
                 # Will write artifacts below with empty delta
             else:
@@ -473,6 +507,8 @@ def main(argv: list[str] | None = None) -> int:
                     "to_process": len(to_process_ids),
                     "deletions": len(deletions_ids),
                 }
+                final_plan["colourMap"] = colour_map if colour_map is not None else DEFAULT_COLOUR_MAP
+                final_plan["colorMap"] = final_plan["colourMap"]
                 mismatch_review = build_mismatch_review(positioned_plan, matches)
                 # For outputs, clippings should be the full new set (for next diff), but plan artifacts are delta
                 clippings = new_clippings
@@ -497,6 +533,8 @@ def main(argv: list[str] | None = None) -> int:
             final_plan = build_final_writer_plan(positioned_plan)
             final_plan["deletions"] = []
             final_plan["is_incremental"] = False
+            final_plan["colourMap"] = colour_map if colour_map is not None else DEFAULT_COLOUR_MAP
+            final_plan["colorMap"] = final_plan["colourMap"]
             mismatch_review = build_mismatch_review(positioned_plan, matches)
 
         indent = 2 if args.pretty else None

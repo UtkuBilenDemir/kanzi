@@ -741,6 +741,18 @@ var KindleZoteroImporter = {
             results.updatedComments += 1;
           }
 
+          // colour update (British spelling in code handles both)
+          const existingColour = existingAnnotation.annotationColor || existingAnnotation.color || "";
+          const newColour = annotation.color || "";
+          const colourChanged = Boolean(newColour) && existingColour.toLowerCase() !== newColour.toLowerCase();
+          if (colourChanged) {
+            existingAnnotation.annotationColor = newColour;
+            // some builds use .color
+            try { existingAnnotation.color = newColour; } catch (_e) {}
+            changed = true;
+            results.updatedComments += 1; // count as updated (or separate if you prefer)
+          }
+
           const oldSortIndex = this.existingSortIndex(existingAnnotation);
           const newSortIndex = annotation.sortIndex || "";
           const sortIndexChanged = Boolean(newSortIndex) && oldSortIndex !== newSortIndex;

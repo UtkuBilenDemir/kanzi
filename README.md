@@ -10,7 +10,7 @@ Import Kindle `My Clippings.txt` highlights into Zotero as native annotations; d
 
 ## Install (30 seconds)
 
-1. Download `kindle-zotero-importer.xpi` from [Releases](../../releases) (latest `0.6.8`, or `0.6.7-beta` for preview).
+1. Download `kindle-zotero-importer.xpi` from [Releases](../../releases) (latest `0.6.9`, or `0.6.8-beta` for preview).
 2. In Zotero: `Tools → Plugins → gear → Install Plugin From File…` → pick the `.xpi` → restart Zotero.
 3. `Tools → Kanzi…` (or `Kindle Zotero Importer…`) to open the manager.
 

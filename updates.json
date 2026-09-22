@@ -3,6 +3,15 @@
     "kindlezoteroimporter@utkubilen.de": {
       "updates": [
         {
+          "version": "0.6.9",
+          "update_link": "https://github.com/UtkuBilenDemir/kindle-zotero_importer/releases/download/v0.6.9/kindle-zotero-importer.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999"
+            }
+          }
+        },
+        {
           "version": "0.6.8",
           "update_link": "https://github.com/UtkuBilenDemir/kindle-zotero_importer/releases/download/v0.6.8/kindle-zotero-importer.xpi",
           "applications": {
