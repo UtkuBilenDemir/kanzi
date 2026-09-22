@@ -8,12 +8,35 @@ from pathlib import Path
 from .clippings import clippings_to_jsonable, load_clippings
 from .epub_position import add_epub_positions
 from .final_plan import build_final_writer_plan
-from .import_plan import build_import_plan
+from .import_plan import DEFAULT_COLOUR_MAP, build_import_plan
 from .matcher import build_match_report, load_json
 from .mismatch_review import build_mismatch_review
 from .overrides import generate_override_skeleton, load_overrides
 from .pdf_position import add_pdf_positions
 from .zotero_index import build_zotero_index
+
+
+def _load_colour_map(workdir: Path) -> dict[str, str] | None:
+    # 1) workdir/colour-map.json (editable via Settings)
+    p = workdir / "colour-map.json"
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k).lower(): str(v) for k, v in data.items()}
+        except Exception:
+            pass
+    # 2) plugin-config.json colourMap field
+    cfg = workdir / "plugin-config.json"
+    if cfg.exists():
+        try:
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+            m = data.get("colourMap") or data.get("colorMap")
+            if isinstance(m, dict):
+                return {str(k).lower(): str(v) for k, v in m.items()}
+        except Exception:
+            pass
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -345,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         overrides_path = Path(args.overrides).expanduser()
         if not overrides_path.is_absolute():
             overrides_path = workdir / overrides_path
+        colour_map = _load_colour_map(workdir)
 
         report_progress(2, "Reading clippings", "Parsing My Clippings.txt")
         new_clippings_list = load_clippings(args.clippings_file)
@@ -433,7 +457,7 @@ def main(argv: list[str] | None = None) -> int:
                 # For artifact completeness, also build full matches for summary? Use delta matches for now
                 # But we need full matches for review? Keep delta
                 report_progress(22, "Building plan", "Selecting attachments (incremental)")
-                plan = build_import_plan(delta_clippings, zotero_index, matches)
+                plan = build_import_plan(delta_clippings, zotero_index, matches, colour_map)
                 report_progress(30, "Positioning EPUB highlights", "Locating highlights in EPUB files (incremental)")
                 epub_plan = add_epub_positions(plan)
                 report_progress(55, "Positioning PDF highlights", "Locating highlights in PDF files (incremental)")
@@ -464,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
             matches = build_match_report(clippings, zotero_index, overrides)
             override_skeleton = generate_override_skeleton(matches)
             report_progress(22, "Building plan", "Selecting attachments")
-            plan = build_import_plan(clippings, zotero_index, matches)
+            plan = build_import_plan(clippings, zotero_index, matches, colour_map)
             report_progress(30, "Positioning EPUB highlights", "Locating highlights in EPUB files")
             epub_plan = add_epub_positions(plan)
             report_progress(55, "Positioning PDF highlights", "Locating highlights in PDF files; this is usually the longest stage")

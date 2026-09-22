@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Kindle Zotero Importer</title>
+  <title>Kanzi — Kindle annotations to Zotero</title>
   <style>
     /* Design Tokens — F (Cleaned D+B) — unified with chess tool 2026-09-21 */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
@@ -111,8 +111,12 @@
           const root = document.getElementById('root');
           root.textContent = '';
           const h1 = document.createElement('h1');
-          h1.textContent = 'Kindle Zotero Importer';
+          h1.textContent = 'Kanzi';
+          const sub = document.createElement('div');
+          sub.className = 'muted';
+          sub.textContent = 'Kindle annotations to Zotero — My Clippings.txt → native annotations';
           root.appendChild(h1);
+          root.appendChild(sub);
           const div = document.createElement('div');
           div.className = 'notice err';
           div.textContent = 'Manager failed to load: ' + String(error) + '\n' + (error.stack || '');
@@ -754,11 +758,26 @@
       },
 
       async saveSettings() {
+        // collect colour map from table
+        const colourMap = {};
+        const tbody = document.getElementById('colour-map-rows');
+        if (tbody) {
+          for (const tr of tbody.querySelectorAll('tr')) {
+            const keyInp = tr.querySelector('.colour-key-input');
+            const hexInp = tr.querySelector('.colour-hex-input');
+            if (!keyInp || !hexInp) continue;
+            const k = (keyInp.value || '').trim().toLowerCase();
+            const v = (hexInp.value || '').trim();
+            if (!k || !/^#[0-9a-fA-F]{6}$/.test(v)) continue;
+            colourMap[k] = v;
+          }
+        }
         const newSettings = {
           projectDir: document.getElementById('setting-projectDir')?.value?.trim(),
           pythonPath: document.getElementById('setting-pythonPath')?.value?.trim(),
           zoteroDbPath: document.getElementById('setting-zoteroDbPath')?.value?.trim(),
           zoteroStorageRoot: document.getElementById('setting-zoteroStorageRoot')?.value?.trim(),
+          colourMap: Object.keys(colourMap).length ? colourMap : undefined,
         };
         const shareAnonymized = !!document.getElementById('setting-shareAnonymized')?.checked;
         try {
@@ -790,11 +809,17 @@
         headerWrap.style.gap = '12px';
         const headerLeft = document.createElement('div');
         const h1 = document.createElement('h1');
-        h1.textContent = 'Kindle Zotero Importer';
+        h1.textContent = 'Kanzi';
+        const sub = document.createElement('div');
+        sub.style.fontSize = '12px';
+        sub.style.color = 'var(--muted)';
+        sub.style.marginTop = '2px';
+        sub.textContent = 'Kindle annotations to Zotero';
         headerLeft.appendChild(h1);
+        headerLeft.appendChild(sub);
         const muted = document.createElement('div');
         muted.className = 'muted';
-        muted.textContent = 'Import Kindle highlights into Zotero and review unresolved items.';
+        muted.textContent = 'My Clippings.txt → native Zotero annotations. Formerly Kindle Zotero Importer.';
         headerLeft.appendChild(muted);
         headerWrap.appendChild(headerLeft);
         const infobox = document.createElement('div');
@@ -1090,6 +1115,187 @@
         shareLabel.style.fontSize = '12px';
         shareRow.appendChild(shareLabel);
         sForm.appendChild(shareRow);
+
+        // Highlight colours — editable bracket → hex map (British spelling)
+        const colourSection = document.createElement('div');
+        colourSection.style.marginTop = '18px';
+        colourSection.style.padding = '12px';
+        colourSection.style.border = '1px solid var(--line)';
+        colourSection.style.borderRadius = 'var(--radius)';
+        colourSection.style.background = 'var(--panel-soft)';
+        const cH3 = document.createElement('div');
+        cH3.textContent = 'Highlight colours';
+        cH3.style.fontWeight = '600';
+        cH3.style.marginBottom = '4px';
+        colourSection.appendChild(cH3);
+        const colDesc = document.createElement('div');
+        colDesc.className = 'muted';
+        colDesc.style.marginBottom = '8px';
+        colDesc.textContent = 'Use [code] at the start of a highlight to set its colour. Grey is [r] per request — red is [red]. Edit codes or hexes below. Example: [o] This will be orange → orange highlight, text becomes “This will be orange”.';
+        colourSection.appendChild(colDesc);
+        const colourTable = document.createElement('table');
+        colourTable.style.marginBottom = '8px';
+        const cThead = document.createElement('thead');
+        cThead.innerHTML = '<tr><th>Bracket code</th><th>Hex colour</th><th>Preview</th></tr>';
+        colourTable.appendChild(cThead);
+        const cTbody = document.createElement('tbody');
+        cTbody.id = 'colour-map-rows';
+        colourTable.appendChild(cTbody);
+        colourSection.appendChild(colourTable);
+        const colourDefaults = {
+          y: '#ffd400', yellow: '#ffd400',
+          o: '#ff8c00', orange: '#ff8c00',
+          r: '#8a8a8a', grey: '#8a8a8a', gray: '#8a8a8a',
+          red: '#ff6666',
+          g: '#5fb236', green: '#5fb236',
+          b: '#2ea8e5', blue: '#2ea8e5',
+          p: '#a28ae5', purple: '#a28ae5',
+          m: '#e56eee', magenta: '#e56eee', pink: '#e56eee'
+        };
+        const currentMap = this.settings.colourMap || this.settings.colorMap || colourDefaults;
+        // merge defaults with current to show all keys, but allow editing
+        const displayKeys = Array.from(new Set([...Object.keys(colourDefaults), ...Object.keys(currentMap || {})])).sort();
+        // also try to load persisted map async and refresh if different
+        this.plugin.loadColourMap().then(m => {
+          if (m && JSON.stringify(m) !== JSON.stringify(currentMap)) {
+            this.settings.colourMap = m;
+            // re-render colour table on next Settings open; for now just keep defaults
+          }
+        }).catch(()=>{});
+        for (const k of displayKeys) {
+          const tr = document.createElement('tr');
+          const tdCode = document.createElement('td');
+          const inpCode = document.createElement('input');
+          inpCode.value = k;
+          inpCode.style.fontFamily = 'JetBrains Mono, monospace';
+          inpCode.style.fontSize = '12px';
+          inpCode.dataset.colourKey = k;
+          inpCode.className = 'colour-key-input';
+          tdCode.appendChild(inpCode);
+          tr.appendChild(tdCode);
+          const tdHex = document.createElement('td');
+          const inpHex = document.createElement('input');
+          inpHex.type = 'color';
+          inpHex.value = (currentMap[k] || colourDefaults[k] || '#ffd400');
+          inpHex.style.height = '28px';
+          inpHex.style.padding = '2px';
+          inpHex.dataset.colourHex = k;
+          inpHex.className = 'colour-hex-input';
+          const txtHex = document.createElement('input');
+          txtHex.value = inpHex.value;
+          txtHex.style.fontFamily = 'JetBrains Mono, monospace';
+          txtHex.style.fontSize = '11px';
+          txtHex.style.marginLeft = '6px';
+          txtHex.style.width = '80px';
+          txtHex.dataset.colourHexTxt = k;
+          inpHex.addEventListener('input', () => { txtHex.value = inpHex.value; });
+          txtHex.addEventListener('input', () => { if (/^#[0-9a-fA-F]{6}$/.test(txtHex.value)) inpHex.value = txtHex.value; });
+          tdHex.appendChild(inpHex);
+          tdHex.appendChild(txtHex);
+          tr.appendChild(tdHex);
+          const tdPrev = document.createElement('td');
+          const sw = document.createElement('span');
+          sw.style.display = 'inline-block';
+          sw.style.width = '20px';
+          sw.style.height = '12px';
+          sw.style.borderRadius = '2px';
+          sw.style.border = '1px solid var(--line)';
+          sw.style.background = inpHex.value;
+          inpHex.addEventListener('input', () => sw.style.background = inpHex.value);
+          txtHex.addEventListener('input', () => { if (/^#[0-9a-fA-F]{6}$/.test(txtHex.value)) sw.style.background = txtHex.value; });
+          tdPrev.appendChild(sw);
+          tr.appendChild(tdPrev);
+          cTbody.appendChild(tr);
+        }
+        // Add row button
+        const addRow = document.createElement('button');
+        addRow.textContent = '+ Add mapping';
+        addRow.style.marginTop = '6px';
+        addRow.style.padding = '4px 8px';
+        addRow.style.border = '1px solid var(--line)';
+        addRow.style.background = 'var(--panel)';
+        addRow.style.borderRadius = 'var(--radius)';
+        addRow.style.cursor = 'pointer';
+        addRow.style.fontSize = '11px';
+        addRow.addEventListener('click', () => {
+          const tr = document.createElement('tr');
+          const tdCode = document.createElement('td');
+          const inpCode = document.createElement('input');
+          inpCode.placeholder = 'e.g. teal';
+          inpCode.style.fontFamily = 'JetBrains Mono, monospace';
+          inpCode.className = 'colour-key-input';
+          tdCode.appendChild(inpCode);
+          tr.appendChild(tdCode);
+          const tdHex = document.createElement('td');
+          const inpHex = document.createElement('input');
+          inpHex.type = 'color';
+          inpHex.value = '#ffd400';
+          inpHex.className = 'colour-hex-input';
+          const txtHex = document.createElement('input');
+          txtHex.value = '#ffd400';
+          txtHex.style.fontFamily = 'JetBrains Mono, monospace';
+          txtHex.style.fontSize = '11px';
+          txtHex.style.marginLeft = '6px';
+          txtHex.style.width = '80px';
+          tdHex.appendChild(inpHex);
+          tdHex.appendChild(txtHex);
+          tr.appendChild(tdHex);
+          const tdPrev = document.createElement('td');
+          const sw = document.createElement('span');
+          sw.style.display = 'inline-block';
+          sw.style.width = '20px';
+          sw.style.height = '12px';
+          sw.style.border = '1px solid var(--line)';
+          sw.style.background = '#ffd400';
+          tdPrev.appendChild(sw);
+          tr.appendChild(tdPrev);
+          cTbody.appendChild(tr);
+        });
+        colourSection.appendChild(addRow);
+        const resetBtn = document.createElement('button');
+        resetBtn.textContent = 'Reset to defaults';
+        resetBtn.style.marginLeft = '6px';
+        resetBtn.style.padding = '4px 8px';
+        resetBtn.style.border = '1px solid var(--line)';
+        resetBtn.style.background = 'var(--panel)';
+        resetBtn.style.borderRadius = 'var(--radius)';
+        resetBtn.style.cursor = 'pointer';
+        resetBtn.style.fontSize = '11px';
+        resetBtn.addEventListener('click', async () => {
+          if (!confirm('Reset colours to defaults (grey = [r])?')) return;
+          cTbody.textContent = '';
+          for (const k of Object.keys(colourDefaults).sort()) {
+            const tr = document.createElement('tr');
+            const tdCode = document.createElement('td');
+            const inpCode = document.createElement('input');
+            inpCode.value = k;
+            inpCode.className = 'colour-key-input';
+            tdCode.appendChild(inpCode);
+            tr.appendChild(tdCode);
+            const tdHex = document.createElement('td');
+            const inpHex = document.createElement('input');
+            inpHex.type = 'color';
+            inpHex.value = colourDefaults[k];
+            inpHex.className = 'colour-hex-input';
+            const txtHex = document.createElement('input');
+            txtHex.value = colourDefaults[k];
+            tdHex.appendChild(inpHex);
+            tdHex.appendChild(txtHex);
+            tr.appendChild(tdHex);
+            const tdPrev = document.createElement('td');
+            const sw = document.createElement('span');
+            sw.style.display = 'inline-block';
+            sw.style.width = '20px';
+            sw.style.height = '12px';
+            sw.style.background = colourDefaults[k];
+            tdPrev.appendChild(sw);
+            tr.appendChild(tdPrev);
+            cTbody.appendChild(tr);
+          }
+        });
+        colourSection.appendChild(resetBtn);
+        sForm.appendChild(colourSection);
+
         const sSaveBtn = document.createElement('button');
         sSaveBtn.textContent = 'Save Settings';
         sSaveBtn.style.marginTop = '12px';
@@ -1303,6 +1509,6 @@
   </script>
 </head>
 <body onload="KindleManager.initSafe()">
-  <div id="root">Loading Kindle Zotero Importer...</div>
+  <div id="root">Loading Kanzi...</div>
 </body>
 </html>

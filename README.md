@@ -2,19 +2,19 @@
 > [!CAUTION]
 > **This project has been heavily vibecoded.**
 
-# Kindle Zotero Importer
+# Kanzi — Kindle annotations to Zotero
 
-Import Kindle `My Clippings.txt` highlights into Zotero as native annotations; directly inside Zotero, no terminal needed.
+Import Kindle `My Clippings.txt` highlights into Zotero as native annotations; directly inside Zotero, no terminal needed. Formerly *Kindle Zotero Importer*.
 
 [<img src="https://img.shields.io/badge/please%20give%20me%20money+-red?style=for-the-badge" alt="please give me money+">](https://github.com/sponsors/UtkuBilenDemir)
 
 ## Install (30 seconds)
 
-1. Download `kindle-zotero-importer.xpi` from [Releases](../../releases) (latest `0.6.6`, or `0.6.5-beta` for preview).
+1. Download `kindle-zotero-importer.xpi` from [Releases](../../releases) (latest `0.6.7`, or `0.6.6-beta` for preview).
 2. In Zotero: `Tools → Plugins → gear → Install Plugin From File…` → pick the `.xpi` → restart Zotero.
-3. `Tools → Kindle Zotero Importer…` to open the manager.
+3. `Tools → Kanzi…` (or `Kindle Zotero Importer…`) to open the manager.
 
-Works with Zotero 7–10; macOS/Windows/Linux; PDF and EPUB.
+Works with Zotero 7–10; macOS/Windows/Linux; PDF and EPUB. Colours via bracket: `[o] orange`, `[r] grey` (per request), `[red]` red, `[y]` yellow, etc. — editable in `Settings → Highlight colours`.
 
 ## Use
 
@@ -32,6 +32,7 @@ Your choices are saved in `match-overrides.json` in the project folder; back it 
 - Keep `My Clippings.txt` cumulative (do not clear it on the Kindle); the importer remembers what is already integrated via `kindle-id:<hash>` tags, so re-imports are incremental.
 - If a highlight is positioned in the wrong place, check that the Zotero item has the correct PDF/EPUB attached (not a link); `Matched-title-no-attachment` in `Conflicts` means that.
 - `Full re-import` is only needed if you changed many mappings at once or want to rebuild from scratch.
+- Colours: start a highlight with `[o]`, `[r]` (grey, per request), `[red]`, `[y]`, `[g]`, `[b]`, `[p]`, `[m]` — e.g. `[o] This is orange` → orange. Full names (`[orange]`, `[grey]` etc.) also work. Change mappings in `Settings → Highlight colours` (British spelling).
 
 ## For developers / CLI
 

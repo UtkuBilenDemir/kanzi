@@ -56,13 +56,13 @@ var KindleZoteroImporter = {
 
     const popup = doc.getElementById("menu_ToolsPopup");
     if (!popup) {
-      Zotero.debug("Kindle Zotero Importer: Tools menu not found");
+      Zotero.debug("Kanzi: Tools menu not found");
       return;
     }
 
     const managerItem = doc.createXULElement("menuitem");
     managerItem.setAttribute("id", "kindle-zotero-importer-manager");
-    managerItem.setAttribute("label", "Kindle Zotero Importer...");
+    managerItem.setAttribute("label", "Kanzi...");
     managerItem.addEventListener("command", () => this.openManager());
     popup.appendChild(managerItem);
     this.menuItems.push(managerItem);
@@ -130,7 +130,7 @@ var KindleZoteroImporter = {
       this.revealFile(path);
     } catch (_error) {
       this.alert(
-        "Kindle Zotero Importer",
+        "Kanzi",
         `File not found yet:\n${path}\n\nRun Import Kindle Clippings first to generate review artifacts.`
       );
     }
@@ -151,6 +151,13 @@ var KindleZoteroImporter = {
           settings[key] = parsed[key];
         }
       }
+      if (parsed.colourMap) settings.colourMap = parsed.colourMap;
+      if (parsed.colorMap) settings.colourMap = parsed.colorMap;
+      // also check colour-map.json for Python pipeline
+      try {
+        const cmapText = await Zotero.File.getContentsAsync(this.getProjectDir() + "/colour-map.json");
+        settings.colourMap = JSON.parse(cmapText);
+      } catch (_e2) {}
     } catch (_error) {
       // The config file is optional; defaults/preferences are enough for first run.
     }
@@ -172,7 +179,7 @@ var KindleZoteroImporter = {
   notify(message, success) {
     try {
       const progressWindow = new Zotero.ProgressWindow({ closeOnClick: true });
-      progressWindow.changeHeadline("Kindle Zotero Importer");
+      progressWindow.changeHeadline("Kanzi");
       const icon = success ? "chrome://zotero/skin/tick.png" : "chrome://zotero/skin/cross.png";
       const item = new progressWindow.ItemProgress(icon, message);
       item.setProgress(100);
@@ -187,7 +194,7 @@ var KindleZoteroImporter = {
   createProgress(message) {
     try {
       const progressWindow = new Zotero.ProgressWindow({ closeOnClick: false });
-      progressWindow.changeHeadline("Kindle Zotero Importer");
+      progressWindow.changeHeadline("Kanzi");
       progressWindow.progress = new progressWindow.ItemProgress(
         "chrome://zotero/skin/treesource-collection.png",
         message
@@ -301,7 +308,18 @@ var KindleZoteroImporter = {
       zoteroDbPath: newSettings.zoteroDbPath || this.getZoteroDbPath(),
       zoteroStorageRoot: newSettings.zoteroStorageRoot || this.getZoteroStorageRoot(),
     };
+    if (newSettings.colourMap) {
+      toSave.colourMap = newSettings.colourMap;
+      // also write colour-map.json for Python pipeline (mirrors plugin-config)
+      try {
+        await Zotero.File.putContentsAsync(
+          this.getProjectDir() + "/colour-map.json",
+          JSON.stringify(newSettings.colourMap, null, 2) + "\n"
+        );
+      } catch (_e) {}
+    }
     for (const [key, value] of Object.entries(toSave)) {
+      if (key === "colourMap") continue;
       this.setPref(key, value);
     }
     await Zotero.File.putContentsAsync(
@@ -309,6 +327,20 @@ var KindleZoteroImporter = {
       JSON.stringify(toSave, null, 2) + "\n"
     );
     return toSave;
+  },
+
+  async loadColourMap() {
+    try {
+      const text = await Zotero.File.getContentsAsync(this.getProjectDir() + "/colour-map.json");
+      return JSON.parse(text);
+    } catch (_e) {}
+    try {
+      const text = await Zotero.File.getContentsAsync(this.getConfigPath());
+      const parsed = JSON.parse(text);
+      if (parsed.colourMap) return parsed.colourMap;
+      if (parsed.colorMap) return parsed.colorMap;
+    } catch (_e) {}
+    return null;
   },
 
   async readJsonArtifact(relativePath) {
@@ -343,7 +375,7 @@ var KindleZoteroImporter = {
     } catch (error) {
       Zotero.logError(error);
       return this.promptForPath(
-        "Kindle Zotero Importer",
+        "Kanzi",
         "File picker failed. Enter the full path to My Clippings.txt:",
         this.defaultClippingsPath
       );
@@ -472,7 +504,7 @@ var KindleZoteroImporter = {
 
     const choice = Services.prompt.confirmEx(
       this.getMainWindow(),
-      "Kindle Zotero Importer",
+      "Kanzi",
       message,
       Services.prompt.BUTTON_POS_0 * Services.prompt.BUTTON_TITLE_IS_STRING +
         Services.prompt.BUTTON_POS_1 * Services.prompt.BUTTON_TITLE_IS_STRING +
@@ -573,7 +605,7 @@ var KindleZoteroImporter = {
     ].join("\n");
     return Services.prompt.confirm(
       this.getMainWindow(),
-      "Kindle Zotero Importer: Recreate Annotation?",
+      "Kanzi: Recreate Annotation?",
       message
     );
   },
@@ -822,7 +854,7 @@ var KindleZoteroImporter = {
       file.initWithPath(path);
       file.reveal();
     } catch (error) {
-      this.alert("Kindle Zotero Importer", `Review file written to:\n${path}\n\n${error}`);
+      this.alert("Kanzi", `Review file written to:\n${path}\n\n${error}`);
     }
   },
 

@@ -6,11 +6,50 @@ from typing import Any
 
 PLAN_FORMAT = "kindle-zotero-importer.import-plan.v1"
 
+# Default bracket → colour map (British spelling in UI, Zotero field stays "color")
+# grey is [r] per request — red is only [red] (full name) to avoid clash
+DEFAULT_COLOUR_MAP: dict[str, str] = {
+    "y": "#ffd400",
+    "yellow": "#ffd400",
+    "o": "#ff8c00",
+    "orange": "#ff8c00",
+    "r": "#8a8a8a",
+    "grey": "#8a8a8a",
+    "gray": "#8a8a8a",
+    "red": "#ff6666",
+    "g": "#5fb236",
+    "green": "#5fb236",
+    "b": "#2ea8e5",
+    "blue": "#2ea8e5",
+    "p": "#a28ae5",
+    "purple": "#a28ae5",
+    "m": "#e56eee",
+    "magenta": "#e56eee",
+    "pink": "#e56eee",
+}
+
+
+def _extract_colour(text: str, colour_map: dict[str, str] | None = None) -> tuple[str, str]:
+    """If text starts with [code], return (colour_hex, stripped_text). Case-insensitive."""
+    if not text:
+        return "#ffd400", text
+    cmap = {k.lower(): v for k, v in (colour_map or DEFAULT_COLOUR_MAP).items()}
+    m = re.match(r"^\s*\[([^\]]+)\]\s*", text)
+    if not m:
+        return "#ffd400", text
+    raw = m.group(1).strip().lower()
+    # allow palette names and single letters
+    hex_colour = cmap.get(raw)
+    if not hex_colour:
+        return "#ffd400", text
+    return hex_colour, text[m.end():].lstrip()
+
 
 def build_import_plan(
     clippings_payload: dict[str, Any],
     zotero_index: dict[str, Any],
     match_report: dict[str, Any],
+    colour_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     items_by_id = {item["item_id"]: item for item in zotero_index["items"]}
     matches_by_title = {
@@ -22,7 +61,7 @@ def build_import_plan(
     }
     clippings = _attach_notes_to_highlights(clippings_payload["clippings"])
     plan_items = [
-        _plan_clipping(clipping, matches_by_title, items_by_id, overrides_by_title)
+        _plan_clipping(clipping, matches_by_title, items_by_id, overrides_by_title, colour_map)
         for clipping in clippings
         if clipping["kind"] in {"highlight", "note"}
     ]
@@ -48,6 +87,7 @@ def _plan_clipping(
     matches_by_title: dict[str, dict[str, Any]],
     items_by_id: dict[int, dict[str, Any]],
     overrides_by_title: dict[str, dict[str, Any]],
+    colour_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     base = {
         "clipping": clipping,
@@ -98,7 +138,7 @@ def _plan_clipping(
                 clipping, zotero_item.get("attachments", [])
             ),
         },
-        "annotation": _annotation_stub(clipping) if attachment else None,
+        "annotation": _annotation_stub(clipping, colour_map) if attachment else None,
         "problems": problems,
     }
 
@@ -193,14 +233,18 @@ def _attachment_from_override(
     return None, None
 
 
-def _annotation_stub(clipping: dict[str, Any]) -> dict[str, Any]:
+def _annotation_stub(clipping: dict[str, Any], colour_map: dict[str, str] | None = None) -> dict[str, Any]:
     annotation_type = "highlight" if clipping["kind"] == "highlight" else "note"
+    raw_text = clipping["text"] if annotation_type == "highlight" else ""
+    colour, cleaned = _extract_colour(raw_text, colour_map)
+    # For highlights, strip the bracket from text; for notes, keep original but still colour from text
+    text = cleaned if annotation_type == "highlight" else raw_text
     return {
         "type": annotation_type,
-        "text": clipping["text"] if annotation_type == "highlight" else "",
+        "text": text,
         "comment": clipping.get("comment")
         or (clipping["text"] if annotation_type == "note" else None),
-        "color": "#ffd400",
+        "color": colour,
         "pageLabel": clipping.get("page") or "",
         "sortIndex": None,
         "position": None,
