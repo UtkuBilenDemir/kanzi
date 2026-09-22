@@ -1,0 +1,35 @@
+{
+  "addons": {
+    "kindlezoteroimporter@utkubilen.de": {
+      "updates": [
+        {
+          "version": "0.6.6",
+          "update_link": "https://github.com/UtkuBilenDemir/kindle-zotero_importer/releases/download/v0.6.6/kindle-zotero-importer.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999"
+            }
+          }
+        },
+        {
+          "version": "0.6.5",
+          "update_link": "https://github.com/UtkuBilenDemir/kindle-zotero_importer/releases/download/v0.6.5/kindle-zotero-importer.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999"
+            }
+          }
+        },
+        {
+          "version": "0.6.4",
+          "update_link": "https://github.com/UtkuBilenDemir/kindle-zotero_importer/releases/download/v0.6.4/kindle-zotero-importer.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
