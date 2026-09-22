@@ -236,14 +236,27 @@ def _attachment_from_override(
 def _annotation_stub(clipping: dict[str, Any], colour_map: dict[str, str] | None = None) -> dict[str, Any]:
     annotation_type = "highlight" if clipping["kind"] == "highlight" else "note"
     raw_text = clipping["text"] if annotation_type == "highlight" else ""
-    colour, cleaned = _extract_colour(raw_text, colour_map)
-    # For highlights, strip the bracket from text; for notes, keep original but still colour from text
-    text = cleaned if annotation_type == "highlight" else raw_text
+    raw_comment = clipping.get("comment") or (clipping["text"] if annotation_type == "note" else None)
+    # Colour from comment first (so [r] on a note colours the highlight), then from highlight text itself
+    comment_colour, cleaned_comment = _extract_colour(raw_comment or "", colour_map) if raw_comment else ("#ffd400", raw_comment)
+    text_colour, cleaned_text = _extract_colour(raw_text, colour_map)
+    if raw_comment and comment_colour != "#ffd400":
+        colour, comment = comment_colour, cleaned_comment
+        text = cleaned_text if text_colour != "#ffd400" else raw_text
+        # also strip bracket from highlight text if it had one
+        if text_colour != "#ffd400":
+            text = cleaned_text
+    elif text_colour != "#ffd400":
+        colour, text, comment = text_colour, cleaned_text, raw_comment
+    else:
+        colour, text, comment = "#ffd400", raw_text, raw_comment
+    # also clean bracket from comment if it was the source
+    if comment and comment != raw_comment:
+        pass  # already stripped
     return {
         "type": annotation_type,
         "text": text,
-        "comment": clipping.get("comment")
-        or (clipping["text"] if annotation_type == "note" else None),
+        "comment": comment,
         "color": colour,
         "pageLabel": clipping.get("page") or "",
         "sortIndex": None,
