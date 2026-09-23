@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Kanzi",
-  "version": "0.6.11",
+  "version": "0.6.12",
   "description": "Kindle annotations to Zotero — My Clippings.txt → native annotations.",
   "homepage_url": "https://github.com/UtkuBilenDemir/kindle-zotero_importer",
   "author": "Utku Bilen Demir",
