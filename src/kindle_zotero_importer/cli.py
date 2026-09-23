@@ -419,22 +419,30 @@ def main(argv: list[str] | None = None) -> int:
             # (so you can recolour a past highlight by adding [r]/[o] etc. to its note or highlight text)
             if colour_map:
                 import re as _re
+                # Build map of new notes by title for quick lookup
+                new_notes_by_title: dict[str, list] = {}
+                for n in new_clippings_list:
+                    if n.kind == "note" and n.id not in prev_integrated_ids:
+                        # new note (not yet integrated) — check if it has a bracket colour
+                        m = _re.match(r"^\s*\[([^\]]+)\]\s*", n.text or "")
+                        if m and m.group(1).strip().lower() in {k.lower() for k in colour_map.keys()}:
+                            new_notes_by_title.setdefault(n.title, []).append(n)
                 for c in new_clippings_list:
                     if c.id not in prev_integrated_ids:
                         continue
-                    # check highlight text and note text for leading [code]
-                    texts = [c.text or ""]
-                    # notes attached to this title may carry the bracket — check all notes for this title
-                    # simplest: if clipping is highlight, its comment (attached note) is in clippings payload; check that too if present
-                    # For incremental we don't yet have attached notes, so check raw clipping text and any note with same title
-                    # For now, check c.text and also any note text that would be attached (we can approximate by checking c.text only)
-                    # Better: check both c.text and the raw note text if kind==highlight and has comment
+                    if c.kind != "highlight":
+                        continue
                     has_bracket = False
+                    # check highlight text itself
                     for t in [c.text or "", getattr(c, "comment", "") or ""]:
                         m = _re.match(r"^\s*\[([^\]]+)\]\s*", t)
                         if m and m.group(1).strip().lower() in {k.lower() for k in colour_map.keys()}:
                             has_bracket = True
                             break
+                    # also check if a *new* note for same title would attach to this highlight (by location/page proximity)
+                    # Approximate: any new note with same title is considered for re-queue (conservative, ensures recolours)
+                    if not has_bracket and c.title in new_notes_by_title:
+                        has_bracket = True
                     if has_bracket:
                         to_process_ids.add(c.id)
             # If colourMap itself changed since last run, re-queue all prev integrated (so Settings change recolours)
