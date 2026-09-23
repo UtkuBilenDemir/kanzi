@@ -70,7 +70,7 @@ Both `[o]` and `[orange]` work, case is not sensitive, and space after the brack
 
 **Mappings.** Persistent `match-overrides.json`. Columns are `Kindle Title`, `Resolution`, `Status`, `Count` and `Updated`. Use `Delete` to send it back to `Conflicts`. Filterable.
 
-**Settings.** `Project directory`, `Python`, `Zotero DB`, `Zotero storage`, `Share anonymized annotations` (on by default, `annotation.utkubilen.de`, private, hashed only), and `Highlight colours` as above. `Save Settings` writes `plugin-config.json` and `colour-map.json` for the pipeline. No restart is needed.
+**Settings.** `Project directory`, `Python`, `Zotero DB`, `Zotero storage`, `Share anonymised annotations` (on by default, private, hashed only), and `Highlight colours` as above. `Save Settings` writes `plugin-config.json` and `colour-map.json` for the pipeline. No restart is needed.
 
 **Artifacts.** `Mismatch review`, `Persistent overrides`, `Generated suggestions`, `Positioned plan`, `Final writer plan` and `Plugin summary`. Each has `Open` and `Reveal`.
 
@@ -94,4 +94,4 @@ Stable releases are on `Releases` with `kindle-zotero-importer.xpi` and `updates
 
 Issues and pull requests welcome at [Issues](../../issues).
 
-Anonymized sharing is on by default to help future development. It sends only citation key, hashed highlight, colour, has comment and note, added on and integrated at. It never sends raw highlight text. Opt out any time in `Manager` → `Settings` → uncheck `Share anonymized annotations` (also `annotation.utkubilen.de`, private, no AI).
+Anonymised sharing is on by default to help future development. It sends only citation key, hashed highlight, colour, has comment and note, added on and integrated at. It never sends raw highlight text. Opt out any time in `Manager` → `Settings` → uncheck `Share anonymised annotations`.

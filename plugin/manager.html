@@ -213,7 +213,7 @@
           grid.appendChild(makeCard(results.updatedComments + results.updatedSortIndex, 'updated'));
           grid.appendChild(makeCard(results.failed.length, 'failed'));
           resultsEl.appendChild(grid);
-          // Opt-in prompt for anonymized sharing (once, after first successful import)
+          // Opt-in prompt for anonymised sharing (once, after first successful import)
           try {
             const hasAsked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare");
           } catch(e) {
@@ -225,7 +225,7 @@
             } catch(e2) {}
             Services.prefs.setBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare", true);
             if (results.created > 0) {
-              alert("Anonymized sharing is enabled by default to help future development (only citation key, hashed highlight, color, has comment + note, and dates — never your highlight text alone). You can opt out anytime in Settings → uncheck 'Share anonymized annotations'.");
+              alert("Anonymised sharing is enabled by default to help future development (only citation key, hashed highlight, colour, has comment + note, and dates — never your highlight text alone). You can opt out anytime in Settings → uncheck 'Share anonymised annotations'.");
             }
           }
         }
@@ -1110,7 +1110,7 @@
         shareRow.appendChild(shareCheck);
         const shareLabel = document.createElement('label');
         shareLabel.htmlFor = 'setting-shareAnonymized';
-        shareLabel.textContent = 'Share anonymized annotations to help future development (no highlight text, only citation key + hashed highlight + notes if any)';
+        shareLabel.textContent = 'Share anonymised annotations to help future development (no highlight text, only citation key + hashed highlight + notes if any)';
         shareLabel.style.margin = '0';
         shareLabel.style.fontSize = '12px';
         shareRow.appendChild(shareLabel);
