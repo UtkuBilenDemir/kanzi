@@ -1,7 +1,26 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
+import re
+import unicodedata
 from typing import Any
+
+
+def _normalise(text: str) -> str:
+    if not text:
+        return ""
+    # NFKC, lower, strip, de-hyphenate, collapse whitespace/punct
+    t = unicodedata.normalize("NFKC", text).lower()
+    t = re.sub(r"-\s*\n\s*", "", t)  # de-hyphenate line breaks
+    t = re.sub(r"[\u2010-\u2015\u2018\u2019\u201c\u201d]", "'", t)
+    t = re.sub(r"[^a-z0-9]+", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def _hash_norm(text: str) -> str:
+    return hashlib.sha256(_normalise(text).encode("utf-8")).hexdigest()[:16]
 
 
 FINAL_FORMAT = "kindle-zotero-importer.zotero-writer-plan.v1"
@@ -22,6 +41,8 @@ def build_final_writer_plan(positioned_plan: dict[str, Any]) -> dict[str, Any]:
             )
             continue
         clipping = item["clipping"]
+        # robust identifiers for cross-library unification
+        norm_hash = _hash_norm(annotation.get("text") or clipping.get("text") or "")
         annotations.append(
             {
                 "clipping_id": clipping["id"],
@@ -34,6 +55,11 @@ def build_final_writer_plan(positioned_plan: dict[str, Any]) -> dict[str, Any]:
                 "parent_item_id": item["zotero"]["parent_item_id"],
                 "parent_key": item["zotero"]["parent_key"],
                 "citation_key": item["zotero"].get("citation_key"),
+                "doi": item["zotero"].get("doi"),
+                "isbn": item["zotero"].get("isbn"),
+                "issn": item["zotero"].get("issn"),
+                "publication_title": item["zotero"].get("publication_title"),
+                "norm_hash": norm_hash,
                 "annotation": {
                     "type": annotation["type"],
                     "text": annotation.get("text") or "",

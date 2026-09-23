@@ -133,6 +133,11 @@ def _plan_clipping(
             "parent_key": zotero_item["key"],
             "parent_title": zotero_item.get("title"),
             "citation_key": zotero_item["fields"].get("citationKey"),
+            "doi": zotero_item["fields"].get("DOI"),
+            "isbn": zotero_item["fields"].get("ISBN"),
+            "issn": zotero_item["fields"].get("ISSN") if "ISSN" in zotero_item["fields"] else None,
+            "url": zotero_item["fields"].get("url"),
+            "publication_title": zotero_item["fields"].get("publicationTitle"),
             "attachment": attachment,
             "attachment_choices": zotero_item.get("attachments", []),
             "expected_attachment_type": _expected_attachment_type(
