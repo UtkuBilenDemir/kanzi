@@ -80,7 +80,40 @@ def load_clippings(path: str) -> list[Clipping]:
         return parse_clippings_text(file.read())
 
 
+def _norm_text(text: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKC", text or "").lower()
+    t = re.sub(r"-\s*\n\s*", "", t)
+    t = re.sub(r"[^\w\s]+", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def dedup_clippings(clippings: list[Clipping]) -> list[Clipping]:
+    seen: dict[tuple[str, str], Clipping] = {}
+    for c in clippings:
+        if c.kind not in {"highlight", "note"}:
+            # keep bookmarks etc. as is
+            key = (c.title, c.id)
+            if key not in seen:
+                seen[key] = c
+            continue
+        key = (c.title, _norm_text(c.text))
+        # keep earliest added_on, or first seen
+        if key not in seen:
+            seen[key] = c
+        else:
+            # if same norm text, keep the one with earlier added_on or shorter location range
+            prev = seen[key]
+            # prefer the one with more complete text (longer) or earlier date
+            if len(c.text) > len(prev.text):
+                seen[key] = c
+    return list(seen.values())
+
+
 def clippings_to_jsonable(clippings: list[Clipping]) -> dict[str, Any]:
+    clippings = dedup_clippings(clippings)
     return {
         "format": "kindle-zotero-importer.clippings.v1",
         "count": len(clippings),

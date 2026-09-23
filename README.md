@@ -13,7 +13,7 @@ Import Kindle `My Clippings.txt` highlights into Zotero as native annotations, d
 
 # Install
 
-1. Download `kindle-zotero-importer.xpi` from [Releases](../../releases) (latest `0.6.19`, or `0.6.18-beta` for preview).
+1. Download `kanzi.xpi` from [Releases](https://github.com/UtkuBilenDemir/kanzi/releases) (latest `0.6.20`, or `0.6.19-beta` for preview).
 2. In Zotero: `Tools` → `Plugins` → `gear` → `Install Plugin From File…` → pick the `.xpi` → restart Zotero.
 3. `Tools` → `Kanzi…` to open the manager.
 
@@ -79,7 +79,7 @@ Incremental is default. Only new, changed or colour-changed highlights are repos
 # For developers / CLI
 
 ```sh
-python scripts/build_plugin.py  # → dist/kindle-zotero-importer.xpi
+python scripts/build_plugin.py  # → dist/kanzi.xpi
 python -m kindle_zotero_importer run "/path/to/My Clippings.txt" --workdir . --pretty
 python -m kindle_zotero_importer run ... --full  # ignore incremental and reprocess all
 ```
@@ -88,7 +88,7 @@ PDF positioning uses Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`) plus `qpdf` f
 
 # Releases
 
-Stable releases are on `Releases` with `kindle-zotero-importer.xpi` and `updates.json` attached. Pre-releases (`beta`) are marked `Pre-release` on GitHub. Zotero auto-updates from `releases/latest/download/updates.json`.
+Stable releases are on `Releases` with `kanzi.xpi` and `updates.json` attached. Pre-releases (`beta`) are marked `Pre-release` on GitHub. Zotero auto-updates from `releases/latest/download/updates.json`.
 
 # Support
 

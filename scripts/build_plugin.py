@@ -8,13 +8,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugin"
 DIST_DIR = ROOT / "dist"
-OUTPUT = DIST_DIR / "kindle-zotero-importer.xpi"
+OUTPUT = DIST_DIR / "kanzi.xpi"
+LEGACY_OUTPUT = DIST_DIR / "kindle-zotero-importer.xpi"
 
 
 def main() -> int:
     DIST_DIR.mkdir(exist_ok=True)
-    if OUTPUT.exists():
-        OUTPUT.unlink()
+    for p in [OUTPUT, LEGACY_OUTPUT]:
+        if p.exists():
+            p.unlink()
 
     manifest_path = PLUGIN_DIR / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

@@ -701,12 +701,34 @@ var KindleZoteroImporter = {
     }
     const existingByAttachment = new Map();
 
+    const normForDedup = (s) => String(s || "").toLowerCase().normalize("NFKC").replace(/-\s*\n\s*/g, "").replace(/[^\w\s]+/g, " ").replace(/\s+/g, " ").trim();
     const getExistingAnnotations = async (attachment) => {
       if (!existingByAttachment.has(attachment.id)) {
         const annotations = attachment.getAnnotations ? attachment.getAnnotations() : [];
         const byFingerprint = new Map();
+        const byNorm = new Map();
 
         for (const annotation of annotations) {
+          const norm = normForDedup(annotation.annotationText || "");
+          const dupNorm = byNorm.get(norm);
+          if (dupNorm && norm) {
+            // collapse identical highlights (e.g. My Clippings duplicates "forged its might…" x5)
+            const kept = dupNorm;
+            const keptHasComment = Boolean(kept.annotationComment);
+            const curHasComment = Boolean(annotation.annotationComment);
+            const duplicate = keptHasComment || !curHasComment ? annotation : kept;
+            const replacement = duplicate === annotation ? kept : annotation;
+            byNorm.set(norm, replacement);
+            // also update fingerprint map
+            const fpDup = this.existingAnnotationFingerprint(duplicate);
+            const fpKeep = this.existingAnnotationFingerprint(replacement);
+            byFingerprint.delete(fpDup);
+            byFingerprint.set(fpKeep, replacement);
+            if (!dryRun) await duplicate.eraseTx();
+            results.removedDuplicates += 1;
+            continue;
+          }
+          if (norm) byNorm.set(norm, annotation);
           const fingerprint = this.existingAnnotationFingerprint(annotation);
           const kept = byFingerprint.get(fingerprint);
           if (!kept) {
