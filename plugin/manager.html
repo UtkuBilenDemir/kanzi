@@ -103,6 +103,12 @@
       startedAt: null,
       timer: null,
       lastClippingsPath: null,
+      integratedPage: 0,
+      integratedPageSize: 50,
+      conflictsPage: 0,
+      conflictsPageSize: 50,
+      mappingsPage: 0,
+      mappingsPageSize: 50,
 
       initSafe() {
         try {
@@ -623,7 +629,7 @@
         return map;
       },
 
-      refreshIntegrated() {
+      refreshIntegrated(resetPage = false) {
         const tbody = document.getElementById('integrated-rows');
         const countEl = document.getElementById('integrated-count');
         if (!tbody) return;
@@ -632,8 +638,83 @@
         const all = this.getIntegratedHighlights();
         const dateMap = this.buildClippingDateMap();
         const filtered = needle ? all.filter(a => `${a.clipping_title} ${a.annotation?.text || ''} ${a.citation_key || ''} ${a.annotation?.pageLabel || ''} ${a.clipping_added_on_iso || ''} ${a.integrated_at || ''}`.toLowerCase().includes(needle)) : all;
-        const toShow = filtered.slice(0, 400);
-        if (countEl) countEl.textContent = `${filtered.length} of ${all.length} shown (first 400)`;
+        if (resetPage) this.integratedPage = 0;
+        const totalPages = Math.max(1, Math.ceil(filtered.length / this.integratedPageSize));
+        if (this.integratedPage >= totalPages) this.integratedPage = totalPages - 1;
+        const start = this.integratedPage * this.integratedPageSize;
+        const toShow = filtered.slice(start, start + this.integratedPageSize);
+        if (countEl) countEl.textContent = `${filtered.length} of ${all.length} — page ${this.integratedPage + 1}/${totalPages} (${this.integratedPageSize} per page)`;
+        // pagination controls
+        let pag = document.getElementById('integrated-pagination');
+        if (!pag) {
+          pag = document.createElement('div');
+          pag.id = 'integrated-pagination';
+          pag.style.display = 'flex';
+          pag.style.justifyContent = 'space-between';
+          pag.style.alignItems = 'center';
+          pag.style.margin = '8px 0';
+          pag.style.gap = '8px';
+          pag.style.flexWrap = 'wrap';
+          tbody.parentElement.parentElement.appendChild(pag);
+        }
+        pag.textContent = '';
+        const mkBtn = (label, disabled, onClick) => {
+          const b = document.createElement('button');
+          b.textContent = label;
+          b.disabled = disabled;
+          b.style.padding = '4px 8px';
+          b.style.border = '1px solid var(--line)';
+          b.style.background = disabled ? 'var(--panel-soft)' : 'var(--panel)';
+          b.style.borderRadius = 'var(--radius)';
+          b.style.cursor = disabled ? 'not-allowed' : 'pointer';
+          b.style.fontSize = '11px';
+          if (!disabled) b.addEventListener('click', onClick);
+          return b;
+        };
+        const left = document.createElement('div');
+        left.style.display = 'flex';
+        left.style.gap = '4px';
+        left.appendChild(mkBtn('‹ Prev', this.integratedPage === 0, () => { this.integratedPage--; this.refreshIntegrated(); }));
+        left.appendChild(mkBtn('Next ›', this.integratedPage >= totalPages - 1, () => { this.integratedPage++; this.refreshIntegrated(); }));
+        const mid = document.createElement('span');
+        mid.className = 'muted';
+        mid.textContent = `Page ${this.integratedPage + 1} of ${totalPages}`;
+        left.appendChild(mid);
+        pag.appendChild(left);
+        const right = document.createElement('div');
+        right.style.display = 'flex';
+        right.style.gap = '6px';
+        right.style.alignItems = 'center';
+        const sel = document.createElement('select');
+        sel.style.padding = '4px';
+        sel.style.border = '1px solid var(--line)';
+        sel.style.borderRadius = 'var(--radius)';
+        sel.style.fontSize = '11px';
+        for (const n of [25, 50, 100, 200, 500]) {
+          const opt = document.createElement('option');
+          opt.value = n;
+          opt.textContent = n + ' per page';
+          if (n === this.integratedPageSize) opt.selected = true;
+          sel.appendChild(opt);
+        }
+        const optAll = document.createElement('option');
+        optAll.value = filtered.length || 500;
+        optAll.textContent = 'Show all';
+        sel.appendChild(optAll);
+        sel.addEventListener('change', () => { this.integratedPageSize = parseInt(sel.value, 10); this.integratedPage = 0; this.refreshIntegrated(); });
+        right.appendChild(sel);
+        const expand = document.createElement('button');
+        expand.textContent = 'Expand 50 →';
+        expand.title = 'Show next 50';
+        expand.style.padding = '4px 8px';
+        expand.style.border = '1px solid var(--line)';
+        expand.style.background = 'var(--panel)';
+        expand.style.borderRadius = 'var(--radius)';
+        expand.style.cursor = 'pointer';
+        expand.style.fontSize = '11px';
+        expand.addEventListener('click', () => { this.integratedPageSize += 50; this.refreshIntegrated(); });
+        right.appendChild(expand);
+        pag.appendChild(right);
         if (!toShow.length) {
           const tr = document.createElement('tr');
           const td = document.createElement('td');
@@ -984,7 +1065,7 @@
         iSearch.placeholder = 'Filter integrated highlights by title, text, citekey...';
         iSearch.style.width = '320px';
         iSearch.style.maxWidth = '50%';
-        iSearch.addEventListener('input', () => this.refreshIntegrated());
+        iSearch.addEventListener('input', () => this.refreshIntegrated(true));
         iSearchWrap.appendChild(iSearch);
         integratedTab.appendChild(iSearchWrap);
         const iCount = document.createElement('div');

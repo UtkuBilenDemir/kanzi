@@ -416,17 +416,19 @@ def main(argv: list[str] | None = None) -> int:
                 if c.id in prev_integrated_ids and c.title in _ov_for_inc:
                     to_process_ids.add(c.id)
             # Also re-queue highlights whose bracket colour would change the annotation
-            # (so you can recolour a past highlight by adding [r]/[o] etc. to its note or highlight text)
+            # (so you can recolour a past highlight by adding [r]/[o] etc. to its note or highlight text,
+            # and also fix old double-bracket comments like "[r] note" + "note")
             if colour_map:
                 import re as _re
-                # Build map of new notes by title for quick lookup
-                new_notes_by_title: dict[str, list] = {}
+                # Build map of notes by title for quick lookup (for bracket on note)
+                notes_by_title: dict[str, list] = {}
                 for n in new_clippings_list:
-                    if n.kind == "note" and n.id not in prev_integrated_ids:
-                        # new note (not yet integrated) — check if it has a bracket colour
+                    if n.kind == "note":
                         m = _re.match(r"^\s*\[([^\]]+)\]\s*", n.text or "")
                         if m and m.group(1).strip().lower() in {k.lower() for k in colour_map.keys()}:
-                            new_notes_by_title.setdefault(n.title, []).append(n)
+                            notes_by_title.setdefault(n.title, []).append(n)
+                        # also check for double-bracket case: note text without bracket but highlight already has [r] in Zotero
+                        # For that, we need to re-queue if existing Zotero comment contains "[r]"
                 for c in new_clippings_list:
                     if c.id not in prev_integrated_ids:
                         continue
@@ -439,10 +441,23 @@ def main(argv: list[str] | None = None) -> int:
                         if m and m.group(1).strip().lower() in {k.lower() for k in colour_map.keys()}:
                             has_bracket = True
                             break
-                    # also check if a *new* note for same title would attach to this highlight (by location/page proximity)
-                    # Approximate: any new note with same title is considered for re-queue (conservative, ensures recolours)
-                    if not has_bracket and c.title in new_notes_by_title:
+                    # also check if any note for same title has bracket (new or old) — for already integrated highlights,
+                    # the note that would be attached is in new_clippings_list; check all notes for title
+                    if not has_bracket and c.title in notes_by_title:
                         has_bracket = True
+                    # also check if previous final plan's annotation for this clipping had a bracket comment that is now stripped
+                    # (handles the double "[r] note" + "note" case)
+                    if not has_bracket and prev_final_plan:
+                        for ann in prev_final_plan.get("annotations", []):
+                            if ann.get("clipping_id") == c.id:
+                                prev_comment = ann.get("annotation", {}).get("comment") or ""
+                                # if prev had "[r] note" and new would be "note", they differ
+                                for part in prev_comment.split("\n\n"):
+                                    m = _re.match(r"^\s*\[([^\]]+)\]\s*", part.strip())
+                                    if m and m.group(1).strip().lower() in {k.lower() for k in colour_map.keys()}:
+                                        has_bracket = True
+                                        break
+                                break
                     if has_bracket:
                         to_process_ids.add(c.id)
             # If colourMap itself changed since last run, re-queue all prev integrated (so Settings change recolours)
