@@ -548,16 +548,37 @@ var KindleZoteroImporter = {
   },
 
   mergeComments(existingComment, newComment) {
+    const stripBracket = (s) => String(s || "").replace(/^\s*\[[^\]]+\]\s*/, "").trim();
     const seen = new Set();
     const merged = [];
     for (const comment of [existingComment, newComment]) {
       for (const part of String(comment || "").split(/\n\s*\n/)) {
         const cleaned = part.trim();
-        if (!cleaned || seen.has(cleaned)) {
+        if (!cleaned) continue;
+        // dedup on stripped version too, so "[r] note" and "note" are same
+        const key = stripBracket(cleaned).toLowerCase() || cleaned.toLowerCase();
+        if (seen.has(cleaned) || seen.has(key)) {
+          // if we have stripped version already, prefer stripped
+          if (seen.has(key) && cleaned !== stripBracket(cleaned)) {
+            // replace existing bracket version with stripped if we now have stripped
+            const idx = merged.findIndex(p => stripBracket(p).toLowerCase() === key);
+            if (idx >= 0) merged[idx] = stripBracket(cleaned);
+            seen.add(cleaned);
+            seen.add(key);
+            continue;
+          }
           continue;
         }
         seen.add(cleaned);
-        merged.push(cleaned);
+        seen.add(key);
+        // store stripped version if it had bracket
+        const stripped = stripBracket(cleaned);
+        if (stripped !== cleaned) {
+          merged.push(stripped);
+          seen.add(stripped);
+        } else {
+          merged.push(cleaned);
+        }
       }
     }
     return merged.join("\n\n");
