@@ -5,11 +5,11 @@
 
 Import Kindle `My Clippings.txt` highlights into Zotero as native annotations, directly inside Zotero, no terminal needed. Formerly *Kindle Zotero Importer*.
 
-<div align="center" style="margin: 22px 0 28px;">
+<p align="center" style="margin: 18px 0 24px;">
 
-<a href="https://github.com/sponsors/UtkuBilenDemir" style="display:inline-block; padding: 16px 36px; background:#cc0000; color:#fff; border-radius:8px; font-weight:800; font-size:15px; letter-spacing:.02em; text-decoration:none; box-shadow:0 4px 14px rgba(204,0,0,.28); border:2px solid #a00;">please give me money+</a>
+<a href="https://github.com/sponsors/UtkuBilenDemir"><img src="https://img.shields.io/badge/please%20give%20me%20money+-red?style=for-the-badge" alt="please give me money+"></a>
 
-</div>
+</p>
 
 # Install
 
