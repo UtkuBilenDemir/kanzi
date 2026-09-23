@@ -259,6 +259,7 @@
               publication_title: a.publication_title || null,
               clipping_id_hash: a.clipping_id ? a.clipping_id.slice(0,8) : null,
               norm_hash: a.norm_hash || null,
+              fuzzy_hash: a.fuzzy_hash || null,
               color: a.annotation?.color,
               has_comment: !!(a.annotation?.comment),
               comment: a.annotation?.comment || "",
@@ -782,10 +783,12 @@
             const keyInp = tr.querySelector('.colour-key-input');
             const hexInp = tr.querySelector('.colour-hex-input');
             if (!keyInp || !hexInp) continue;
-            const k = (keyInp.value || '').trim().toLowerCase();
+            const raw = (keyInp.value || '').trim().toLowerCase();
             const v = (hexInp.value || '').trim();
-            if (!k || !/^#[0-9a-fA-F]{6}$/.test(v)) continue;
-            colourMap[k] = v;
+            if (!raw || !/^#[0-9a-fA-F]{6}$/.test(v)) continue;
+            for (const k of raw.split(',').map(s=>s.trim()).filter(Boolean)) {
+              colourMap[k] = v;
+            }
           }
         }
         const newSettings = {
@@ -1158,52 +1161,72 @@
         cTbody.id = 'colour-map-rows';
         colourTable.appendChild(cTbody);
         colourSection.appendChild(colourTable);
-        const colourDefaults = {
-          y: '#ffd400', yellow: '#ffd400',
-          o: '#ff8c00', orange: '#ff8c00',
-          r: '#ff6666', red: '#ff6666',
-          e: '#8a8a8a', grey: '#8a8a8a', gray: '#8a8a8a',
-          g: '#5fb236', green: '#5fb236',
-          b: '#2ea8e5', blue: '#2ea8e5',
-          p: '#a28ae5', purple: '#a28ae5',
-          m: '#e56eee', magenta: '#e56eee', pink: '#e56eee'
-        };
+        const colourDefs = [
+          { name: 'yellow', codes: 'y, yellow', hex: '#ffd400' },
+          { name: 'orange', codes: 'o, orange', hex: '#ff8c00' },
+          { name: 'red', codes: 'r, red', hex: '#ff6666' },
+          { name: 'grey', codes: 'e, grey, gray', hex: '#8a8a8a' },
+          { name: 'green', codes: 'g, green', hex: '#5fb236' },
+          { name: 'blue', codes: 'b, blue, bl', hex: '#2ea8e5' },
+          { name: 'purple', codes: 'p, purple', hex: '#a28ae5' },
+          { name: 'magenta', codes: 'm, magenta, pink', hex: '#e56eee' },
+        ];
+        const colourDefaults = {};
+        for (const d of colourDefs) for (const c of d.codes.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)) colourDefaults[c] = d.hex;
         const currentMap = this.settings.colourMap || this.settings.colorMap || colourDefaults;
-        // merge defaults with current to show all keys, but allow editing
-        const displayKeys = Array.from(new Set([...Object.keys(colourDefaults), ...Object.keys(currentMap || {})])).sort();
-        // also try to load persisted map async and refresh if different
+        // group currentMap by hex for display (one bar per colour)
+        const byHex = {};
+        for (const [k,v] of Object.entries(currentMap)) {
+          const hv = v.toLowerCase();
+          if (!byHex[hv]) byHex[hv] = [];
+          byHex[hv].push(k);
+        }
+        // ensure all default hexes have an entry
+        for (const d of colourDefs) if (!byHex[d.hex.toLowerCase()]) byHex[d.hex.toLowerCase()] = d.codes.split(',').map(s=>s.trim().toLowerCase());
         this.plugin.loadColourMap().then(m => {
           if (m && JSON.stringify(m) !== JSON.stringify(currentMap)) {
             this.settings.colourMap = m;
-            // re-render colour table on next Settings open; for now just keep defaults
           }
         }).catch(()=>{});
-        for (const k of displayKeys) {
+        for (const def of colourDefs) {
+          const hx = def.hex.toLowerCase();
+          const codes = (byHex[hx] || def.codes.split(',').map(s=>s.trim().toLowerCase())).join(', ');
           const tr = document.createElement('tr');
           const tdCode = document.createElement('td');
           const inpCode = document.createElement('input');
-          inpCode.value = k;
+          inpCode.value = codes;
+          inpCode.placeholder = 'e.g. b, blue, bl';
           inpCode.style.fontFamily = 'JetBrains Mono, monospace';
           inpCode.style.fontSize = '12px';
-          inpCode.dataset.colourKey = k;
+          inpCode.dataset.colourCodes = hx;
           inpCode.className = 'colour-key-input';
+          inpCode.title = 'Comma-separated codes for this colour — e.g. b, blue, bl';
           tdCode.appendChild(inpCode);
           tr.appendChild(tdCode);
           const tdHex = document.createElement('td');
           const inpHex = document.createElement('input');
           inpHex.type = 'color';
-          inpHex.value = (currentMap[k] || colourDefaults[k] || '#ffd400');
+          inpHex.value = hx;
+          // try to use currentMap's hex if user changed it
+          const actualHex = (byHex[hx] ? hx : def.hex);
+          // if user changed hex for this colour, use that
+          let displayHex = def.hex;
+          // find if any of the codes in this row has a different hex in currentMap (custom)
+          // For now just use def.hex, but if currentMap has different, it will be in byHex key
+          // So displayHex is hx
+          displayHex = hx;
+          inpHex.value = displayHex;
           inpHex.style.height = '28px';
           inpHex.style.padding = '2px';
-          inpHex.dataset.colourHex = k;
+          inpHex.dataset.colourHex = hx;
           inpHex.className = 'colour-hex-input';
           const txtHex = document.createElement('input');
-          txtHex.value = inpHex.value;
+          txtHex.value = displayHex;
           txtHex.style.fontFamily = 'JetBrains Mono, monospace';
           txtHex.style.fontSize = '11px';
           txtHex.style.marginLeft = '6px';
           txtHex.style.width = '80px';
-          txtHex.dataset.colourHexTxt = k;
+          txtHex.dataset.colourHexTxt = hx;
           inpHex.addEventListener('input', () => { txtHex.value = inpHex.value; });
           txtHex.addEventListener('input', () => { if (/^#[0-9a-fA-F]{6}$/.test(txtHex.value)) inpHex.value = txtHex.value; });
           tdHex.appendChild(inpHex);
@@ -1216,9 +1239,39 @@
           sw.style.height = '12px';
           sw.style.borderRadius = '2px';
           sw.style.border = '1px solid var(--line)';
-          sw.style.background = inpHex.value;
+          sw.style.background = displayHex;
           inpHex.addEventListener('input', () => sw.style.background = inpHex.value);
           txtHex.addEventListener('input', () => { if (/^#[0-9a-fA-F]{6}$/.test(txtHex.value)) sw.style.background = txtHex.value; });
+          tdPrev.appendChild(sw);
+          tr.appendChild(tdPrev);
+          cTbody.appendChild(tr);
+        }
+        // also add any custom hexes not in defaults (user added new colour)
+        for (const [hx, codes] of Object.entries(byHex)) {
+          if (colourDefs.some(d => d.hex.toLowerCase() === hx)) continue;
+          const tr = document.createElement('tr');
+          const tdCode = document.createElement('td');
+          const inpCode = document.createElement('input');
+          inpCode.value = codes.join(', ');
+          inpCode.className = 'colour-key-input';
+          inpCode.dataset.colourCodes = hx;
+          inpCode.style.fontFamily = 'JetBrains Mono, monospace';
+          tdCode.appendChild(inpCode);
+          tr.appendChild(tdCode);
+          const tdHex = document.createElement('td');
+          const inpHex = document.createElement('input');
+          inpHex.type = 'color';
+          inpHex.value = hx;
+          inpHex.className = 'colour-hex-input';
+          inpHex.dataset.colourHex = hx;
+          tdHex.appendChild(inpHex);
+          const txtHex = document.createElement('input');
+          txtHex.value = hx;
+          tdHex.appendChild(txtHex);
+          tr.appendChild(tdHex);
+          const tdPrev = document.createElement('td');
+          const sw = document.createElement('span');
+          sw.style.background = hx;
           tdPrev.appendChild(sw);
           tr.appendChild(tdPrev);
           cTbody.appendChild(tr);
