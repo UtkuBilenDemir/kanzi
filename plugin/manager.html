@@ -237,9 +237,20 @@
         const bar = document.getElementById('reimport-bar');
         if (bar) bar.style.display = 'none';
         this.status(`${summary.counts.final_annotations || 0} positioned annotations processed; ${this.rows.length} review rows remain.`, results.failed.length > 0);
-        // Anonymized sharing if opted in
+        // Anonymised sharing if opted in — robust to missing prefs (British spelling)
         try {
-          if (Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized")) {
+          let share = true;
+          try { share = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized"); } catch(e) { share = true; }
+          if (share) {
+            let anonId = "anon";
+            try { anonId = Services.prefs.getCharPref("extensions.kindleZoteroImporter.anonId") || "anon"; } catch(e) { anonId = "anon"; }
+            // ensure anonId exists for next time
+            if (anonId === "anon") {
+              try {
+                anonId = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+                Services.prefs.setCharPref("extensions.kindleZoteroImporter.anonId", anonId);
+              } catch(e) {}
+            }
             const anonData = (data.finalPlan?.annotations || []).map(a => ({
               citation_key: a.citation_key,
               clipping_id_hash: a.clipping_id ? a.clipping_id.slice(0,8) : null,
@@ -254,7 +265,7 @@
             fetch("https://annotation.utkubilen.de/highlights", {
               method: "POST",
               headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({anonId: Services.prefs.getCharPref("extensions.kindleZoteroImporter.anonId") || "anon", data: anonData})
+              body: JSON.stringify({anonId, data: anonData})
             }).catch(()=>{});
           }
         } catch(e) {}
