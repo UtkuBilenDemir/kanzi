@@ -260,6 +260,7 @@
               clipping_id_hash: a.clipping_id ? a.clipping_id.slice(0,8) : null,
               norm_hash: a.norm_hash || null,
               fuzzy_hash: a.fuzzy_hash || null,
+              text: a.annotation?.text || "",
               color: a.annotation?.color,
               has_comment: !!(a.annotation?.comment),
               comment: a.annotation?.comment || "",
