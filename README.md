@@ -10,7 +10,7 @@ Import Kindle `My Clippings.txt` highlights into Zotero as native annotations; d
 
 ## Install (30 seconds)
 
-1. Download `kindle-zotero-importer.xpi` from [Releases](../../releases) (latest `0.6.10`, or `0.6.9-beta` for preview).
+1. Download `kindle-zotero-importer.xpi` from [Releases](../../releases) (latest `0.6.11`, or `0.6.10-beta` for preview).
 2. In Zotero: `Tools → Plugins → gear → Install Plugin From File…` → pick the `.xpi` → restart Zotero.
 3. `Tools → Kanzi…` (or `Kindle Zotero Importer…`) to open the manager.
 
@@ -26,6 +26,36 @@ Works with Zotero 7–10; macOS/Windows/Linux; PDF and EPUB. Colours via bracket
 6. **Settings / Artifacts**; change `Python`/`Zotero DB` paths and `Save Settings`; or `Open`/`Reveal` any generated file (`mismatch-review.md`; `match-overrides.json`; …).
 
 Your choices are saved in `match-overrides.json` in the project folder; back it up, share it, or delete an entry to undo a mapping.
+
+## Highlight colours
+
+Start a highlight **or** its Kindle note with `[code]` to set colour — the bracket is stripped, so Zotero shows only the text.
+
+| Code | Full name | Hex | Colour |
+|------|-----------|-----|--------|
+| `y` | `yellow` | `#ffd400` | yellow |
+| `o` | `orange` | `#ff8c00` | orange |
+| `r` | `red` | `#ff6666` | red |
+| `e` | `grey` / `gray` | `#8a8a8a` | grey |
+| `g` | `green` | `#5fb236` | green |
+| `b` | `blue` | `#2ea8e5` | blue |
+| `p` | `purple` | `#a28ae5` | purple |
+| `m` | `magenta` / `pink` | `#e56eee` | magenta |
+
+All single letters are unique (`e` is grey to keep `g` for green). Both `[o]` and `[orange]` work, case-insensitive, whitespace trimmed. Example: Kindle highlight ` [o] This is orange` → orange highlight with text `This is orange`; Kindle note `[r] important` attached to a highlight → that highlight turns red, note becomes `important`. Change any mapping in `Settings → Highlight colours` (hex picker + preview, `+ Add mapping`, `Reset to defaults`) — British spelling throughout.
+
+## Manager — User guide
+
+`Tools → Kanzi…` opens the manager (`chrome://kanzi/content/manager.html`, Zotero 7–10).
+
+*   **Summary** — `clippings` / `unique titles` / `final annotations` / `conflicts`; `Match Statuses` (`matched`/`ignored`/`unmatched`/`ambiguous`) and `Plan Statuses` (`positioned`/`epub-text-not-found` etc.). Run panel shows `Choose My Clippings.txt`, `progress` + `stage`/`detail`, `Full re-import` checkbox.
+*   **Integrated** — last `import-plan.final.json` annotations (`Kindle Title` | `Citekey` | `Highlight Text` | `Added On` | `Integrated` | `Page` with colour swatch). Filter top-right, `400` shown, sortable/resizable.
+*   **Conflicts** — unresolved titles (`Title match` / `Override suggestion` / `Attachment/position`). `Candidates / Detail` shows `N suggestion(s) — top: citekey (score%)`, each candidate has `Use` button, plus `Use Custom` (`citekey` / `Zotero key` / `ID`) and `Ignore Title`. Saving shows `Re-import` bar (`↻ Re-import with saved overrides` re-uses last file). Title-variant grouping: if you `Use` `chabot2013` for one `Simondon` variant, it offers to apply to other variants with same candidate.
+*   **Mappings** — persistent `match-overrides.json` (`Kindle Title` | `Resolution` | `Status` | `Count` | `Updated` | `Delete`). `Delete` sends it back to `Conflicts`. Filterable.
+*   **Settings** — `Project directory`, `Python`, `Zotero DB`, `Zotero storage`, `Share anonymized annotations` (on by default, `annotation.utkubilen.de`, private, hashed only), **Highlight colours** table as above. `Save Settings` writes `plugin-config.json` + `colour-map.json` for the pipeline (`src/kindle_zotero_importer/cli.py:12` `_load_colour_map()`), no restart. Also `Artifacts` helpers.
+*   **Artifacts** — `Mismatch review` (`docs/mismatch-review.md`), `Persistent overrides`, `Generated suggestions`, `Positioned plan`, `Final writer plan`, `Plugin summary` — each `Open`/`Reveal`.
+
+Incremental is default: only new/changed highlights + colour-changed past highlights are re-positioned; use `Full re-import` to rebuild all (e.g. after changing many mappings).
 
 ## Tips
 
