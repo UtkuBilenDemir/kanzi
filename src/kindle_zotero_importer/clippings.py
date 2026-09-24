@@ -91,25 +91,59 @@ def _norm_text(text: str) -> str:
 
 
 def dedup_clippings(clippings: list[Clipping]) -> list[Clipping]:
-    seen: dict[tuple[str, str], Clipping] = {}
+    result: list[Clipping] = []
+    exact_highlights: dict[tuple[str, str, str | None, str | None], int] = {}
+    revised_highlights: dict[tuple[str, int], int] = {}
+    seen_other_ids: set[str] = set()
+
     for c in clippings:
-        if c.kind not in {"highlight", "note"}:
-            # keep bookmarks etc. as is
-            key = (c.title, c.id)
-            if key not in seen:
-                seen[key] = c
+        if c.kind != "highlight":
+            # Notes carry meaning independently and must never collide with highlights.
+            if c.id not in seen_other_ids:
+                result.append(c)
+                seen_other_ids.add(c.id)
             continue
-        key = (c.title, _norm_text(c.text))
-        # keep earliest added_on, or first seen
-        if key not in seen:
-            seen[key] = c
-        else:
-            # if same norm text, keep the one with earlier added_on or shorter location range
-            prev = seen[key]
-            # prefer the one with more complete text (longer) or earlier date
-            if len(c.text) > len(prev.text):
-                seen[key] = c
-    return list(seen.values())
+
+        norm = _norm_text(c.text)
+        exact_key = (c.title, norm, c.page, c.location)
+        if exact_key in exact_highlights:
+            continue
+
+        location_start = _range_start(c.location)
+        revision_key = (c.title, location_start) if location_start is not None else None
+        if revision_key is not None and revision_key in revised_highlights:
+            previous_index = revised_highlights[revision_key]
+            previous = result[previous_index]
+            previous_norm = _norm_text(previous.text)
+            if _is_text_revision(previous_norm, norm):
+                # Kindle keeps earlier versions when a highlight is extended. The
+                # longest version represents the final selection.
+                if len(norm) > len(previous_norm):
+                    result[previous_index] = c
+                    exact_highlights[exact_key] = previous_index
+                continue
+
+        index = len(result)
+        result.append(c)
+        exact_highlights[exact_key] = index
+        if revision_key is not None:
+            revised_highlights[revision_key] = index
+
+    return result
+
+
+def _range_start(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = re.search(r"\d+", value)
+    return int(match.group()) if match else None
+
+
+def _is_text_revision(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    shorter, longer = sorted((left, right), key=len)
+    return len(shorter) >= 20 and longer.startswith(shorter)
 
 
 def clippings_to_jsonable(clippings: list[Clipping]) -> dict[str, Any]:

@@ -1,0 +1,15 @@
+{
+  "format": "kindle-zotero-importer.match-overrides.v1",
+  "overrides": [
+    {
+      "clipping_title": "Example Kindle title",
+      "resolution": {
+        "citation_key": "example2026"
+      },
+      "review": {
+        "status": "manager",
+        "clipping_count": 1
+      }
+    }
+  ]
+}

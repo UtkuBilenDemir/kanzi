@@ -65,6 +65,7 @@ def build_final_writer_plan(positioned_plan: dict[str, Any]) -> dict[str, Any]:
                 "clipping_title": clipping["title"],
                 "clipping_added_on": clipping.get("added_on"),
                 "clipping_added_on_iso": clipping.get("added_on_iso"),
+                "note_ids": clipping.get("note_ids", []),
                 "integrated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "attachment_item_id": attachment["item_id"],
                 "attachment_key": attachment["key"],

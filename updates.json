@@ -3,6 +3,15 @@
     "kindlezoteroimporter@utkubilen.de": {
       "updates": [
         {
+          "version": "0.7.0",
+          "update_link": "https://github.com/UtkuBilenDemir/kanzi/releases/download/v0.7.0/kanzi.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999"
+            }
+          }
+        },
+        {
           "version": "0.6.20",
           "update_link": "https://github.com/UtkuBilenDemir/kanzi/releases/download/v0.6.20/kanzi.xpi",
           "applications": {

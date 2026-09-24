@@ -8,14 +8,15 @@ import shutil
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Any
 
 
 _TOOL_PATHS = {
-    "pdftotext": ("/home/user/bin/pdftotext", "/opt/homebrew/bin/pdftotext"),
-    "pdftohtml": ("/home/user/bin/pdftohtml", "/opt/homebrew/bin/pdftohtml"),
-    "pdfinfo": ("/home/user/bin/pdfinfo", "/opt/homebrew/bin/pdfinfo"),
-    "qpdf": ("/home/user/bin/qpdf", "/opt/homebrew/bin/qpdf"),
+    "pdftotext": (str(Path.home() / "bin" / "pdftotext"), "/opt/homebrew/bin/pdftotext"),
+    "pdftohtml": (str(Path.home() / "bin" / "pdftohtml"), "/opt/homebrew/bin/pdftohtml"),
+    "pdfinfo": (str(Path.home() / "bin" / "pdfinfo"), "/opt/homebrew/bin/pdfinfo"),
+    "qpdf": (str(Path.home() / "bin" / "qpdf"), "/opt/homebrew/bin/qpdf"),
 }
 
 
@@ -27,6 +28,15 @@ def _tool(name: str) -> str:
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
     return name
+
+
+def _missing_required_tools() -> list[str]:
+    missing = []
+    for name in ("pdftotext", "pdftohtml", "pdfinfo"):
+        path = _tool(name)
+        if path == name and shutil.which(name) is None:
+            missing.append(name)
+    return missing
 
 
 @dataclass(frozen=True)
@@ -54,18 +64,29 @@ def add_pdf_positions(plan: dict[str, Any]) -> dict[str, Any]:
     size_cache: dict[tuple[str, int], tuple[float, float]] = {}
     decrypted_cache: dict[str, str] = {}
     positioned = []
+    missing_tools = _missing_required_tools()
     with tempfile.TemporaryDirectory(prefix="kindle-zotero-pdf-") as temp_dir:
         for item in plan["items"]:
-            positioned.append(
-                _position_item(
-                    item,
-                    text_cache,
-                    xml_cache,
-                    size_cache,
-                    decrypted_cache,
-                    temp_dir,
+            attachment = (item.get("zotero") or {}).get("attachment") or {}
+            if (
+                missing_tools
+                and item.get("status") == "ready-for-positioning"
+                and attachment.get("content_type") == "application/pdf"
+            ):
+                positioned.append(
+                    _with_problem(item, f"pdf-tools-missing:{','.join(missing_tools)}")
                 )
-            )
+            else:
+                positioned.append(
+                    _position_item(
+                        item,
+                        text_cache,
+                        xml_cache,
+                        size_cache,
+                        decrypted_cache,
+                        temp_dir,
+                    )
+                )
 
     status_counts: dict[str, int] = {}
     for item in positioned:

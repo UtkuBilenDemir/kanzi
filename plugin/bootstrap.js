@@ -1,10 +1,9 @@
 var KindleZoteroImporter = {
   id: "kindle-zotero-importer@utkubilen.de",
   menuItems: [],
-  defaultProjectDir:
-    "/home/user/Library/Mobile Documents/iCloud~md~obsidian/Documents/rhizome/06_projects/UTI/kindle-zotero-importer",
-  defaultClippingsPath:
-    "/home/user/Library/Mobile Documents/com~apple~CloudDocs/Projects/test/My Clippings.txt",
+  runtimeProjectDir: "",
+  defaultProjectDir: "",
+  defaultClippingsPath: "",
   prefBranch: "extensions.kindleZoteroImporter.",
   rootURI: null,
   managerWindow: null,
@@ -20,7 +19,39 @@ var KindleZoteroImporter = {
       [["content", "kindle-zotero-importer", ""]]
     );
     await Zotero.initializationPromise;
+    await this.ensureRuntime();
     this.addToAllWindows();
+  },
+
+  async ensureRuntime() {
+    const runtimeDir = PathUtils.join(PathUtils.profileDir, "kanzi-runtime");
+    const files = [
+      "plugin_runner.py",
+      "src/kindle_zotero_importer/__init__.py",
+      "src/kindle_zotero_importer/__main__.py",
+      "src/kindle_zotero_importer/cli.py",
+      "src/kindle_zotero_importer/clippings.py",
+      "src/kindle_zotero_importer/epub_position.py",
+      "src/kindle_zotero_importer/final_plan.py",
+      "src/kindle_zotero_importer/import_plan.py",
+      "src/kindle_zotero_importer/matcher.py",
+      "src/kindle_zotero_importer/mismatch_review.py",
+      "src/kindle_zotero_importer/overrides.py",
+      "src/kindle_zotero_importer/pdf_position.py",
+      "src/kindle_zotero_importer/zotero_index.py",
+    ];
+    await IOUtils.makeDirectory(runtimeDir, { createAncestors: true, ignoreExisting: true });
+    for (const relativePath of files) {
+      const destination = PathUtils.join(runtimeDir, ...relativePath.split("/"));
+      await IOUtils.makeDirectory(PathUtils.parent(destination), {
+        createAncestors: true,
+        ignoreExisting: true,
+      });
+      const response = await fetch(this.rootURI + "runtime/" + relativePath);
+      if (!response.ok) throw new Error(`Missing Kanzi runtime file: ${relativePath}`);
+      await Zotero.File.putContentsAsync(destination, await response.text());
+    }
+    this.runtimeProjectDir = runtimeDir;
   },
 
   shutdown() {
@@ -89,7 +120,8 @@ var KindleZoteroImporter = {
 
   getPref(name, fallback) {
     try {
-      return Services.prefs.getCharPref(this.prefBranch + name);
+      const value = Services.prefs.getCharPref(this.prefBranch + name);
+      return value || fallback;
     } catch (_error) {
       return fallback;
     }
@@ -100,19 +132,21 @@ var KindleZoteroImporter = {
   },
 
   getProjectDir() {
-    return this.getPref("projectDir", this.defaultProjectDir);
+    return this.getPref("projectDir", this.runtimeProjectDir || this.defaultProjectDir);
   },
 
   getPythonPath() {
-    return this.getPref("pythonPath", "/opt/homebrew/bin/python3");
+    return this.getPref("pythonPath", "python3");
   },
 
   getZoteroDbPath() {
-    return this.getPref("zoteroDbPath", "/home/user/Zotero/zotero.sqlite");
+    const dataDir = Zotero.DataDirectory && Zotero.DataDirectory.dir;
+    return this.getPref("zoteroDbPath", dataDir ? PathUtils.join(dataDir, "zotero.sqlite") : "");
   },
 
   getZoteroStorageRoot() {
-    return this.getPref("zoteroStorageRoot", "/home/user/Zotero/storage");
+    const dataDir = Zotero.DataDirectory && Zotero.DataDirectory.dir;
+    return this.getPref("zoteroStorageRoot", dataDir ? PathUtils.join(dataDir, "storage") : "");
   },
 
   getConfigPath() {
@@ -143,6 +177,17 @@ var KindleZoteroImporter = {
       zoteroDbPath: this.getZoteroDbPath(),
       zoteroStorageRoot: this.getZoteroStorageRoot(),
     };
+    if (settings.pythonPath === "python3") {
+      const candidates = Services.appinfo.OS === "Darwin"
+        ? ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
+        : ["/usr/bin/python3", "/usr/local/bin/python3"];
+      for (const candidate of candidates) {
+        if (await IOUtils.exists(candidate)) {
+          settings.pythonPath = candidate;
+          break;
+        }
+      }
+    }
     try {
       const text = await Zotero.File.getContentsAsync(this.getConfigPath());
       const parsed = JSON.parse(text);
@@ -382,7 +427,7 @@ var KindleZoteroImporter = {
     }
   },
 
-  async runPipeline(clippingsPath, settings, isFull = false) {
+  async runPipeline(clippingsPath, settings, isFull = false, retryUnresolved = false) {
     const python = settings.pythonPath;
     const projectDir = settings.projectDir;
     const runner = projectDir + "/plugin_runner.py";
@@ -409,6 +454,9 @@ var KindleZoteroImporter = {
     if (isFull) {
       args.push("--full");
     }
+    if (retryUnresolved) {
+      args.push("--retry-unresolved");
+    }
 
     await this.exec(python, args);
     return JSON.parse(await Zotero.File.getContentsAsync(summaryOutput));
@@ -420,10 +468,11 @@ var KindleZoteroImporter = {
       return;
     }
     const isFull = manager.getFullReimport ? manager.getFullReimport() : false;
-    await this.runManagedImportWithPath(manager, clippingsPath, isFull);
+    const retryUnresolved = manager.getRetryUnresolved ? manager.getRetryUnresolved() : false;
+    await this.runManagedImportWithPath(manager, clippingsPath, isFull, retryUnresolved);
   },
 
-  async runManagedImportWithPath(manager, clippingsPath, isFullOverride) {
+  async runManagedImportWithPath(manager, clippingsPath, isFullOverride, retryUnresolvedOverride) {
     try {
       if (!clippingsPath) {
         throw new Error("No clippings file selected");
@@ -432,6 +481,9 @@ var KindleZoteroImporter = {
       const progressPath = settings.projectDir + "/plugin-progress.json";
       // Determine full vs incremental from explicit arg or manager checkbox
       const isFull = typeof isFullOverride === "boolean" ? isFullOverride : (manager.getFullReimport ? manager.getFullReimport() : false);
+      const retryUnresolved = typeof retryUnresolvedOverride === "boolean"
+        ? retryUnresolvedOverride
+        : (manager.getRetryUnresolved ? manager.getRetryUnresolved() : false);
       manager.beginRun(clippingsPath);
       try {
         await Zotero.File.removeIfExists(progressPath);
@@ -450,7 +502,7 @@ var KindleZoteroImporter = {
       const pollPromise = poll();
       let summary;
       try {
-        summary = await this.runPipeline(clippingsPath, settings, isFull);
+        summary = await this.runPipeline(clippingsPath, settings, isFull, retryUnresolved);
       } finally {
         polling = false;
         await pollPromise;
@@ -464,8 +516,9 @@ var KindleZoteroImporter = {
         const percent = total ? 96 + Math.floor((completed / total) * 4) : 100;
         manager.updateProgress(percent, "Writing annotations", `${completed} of ${total} checked`);
       });
+      await this.reconcileWriterState(summary.outputs.final_plan, finalPlan, results);
       const data = await this.loadManagerData();
-      manager.completeRun(summary, results, data);
+      await manager.completeRun(summary, results, data);
     } catch (error) {
       Zotero.logError(error);
       manager.failRun(String(error && error.stack ? error.stack : error));
@@ -548,40 +601,141 @@ var KindleZoteroImporter = {
   },
 
   mergeComments(existingComment, newComment) {
-    const stripBracket = (s) => String(s || "").replace(/^\s*\[[^\]]+\]\s*/, "").trim();
     const seen = new Set();
     const merged = [];
     for (const comment of [existingComment, newComment]) {
       for (const part of String(comment || "").split(/\n\s*\n/)) {
-        const cleaned = part.trim();
+        const cleaned = this.stripColourCode(part);
         if (!cleaned) continue;
-        // dedup on stripped version too, so "[r] note" and "note" are same
-        const key = stripBracket(cleaned).toLowerCase() || cleaned.toLowerCase();
-        if (seen.has(cleaned) || seen.has(key)) {
-          // if we have stripped version already, prefer stripped
-          if (seen.has(key) && cleaned !== stripBracket(cleaned)) {
-            // replace existing bracket version with stripped if we now have stripped
-            const idx = merged.findIndex(p => stripBracket(p).toLowerCase() === key);
-            if (idx >= 0) merged[idx] = stripBracket(cleaned);
-            seen.add(cleaned);
-            seen.add(key);
-            continue;
-          }
-          continue;
-        }
-        seen.add(cleaned);
+        const key = cleaned.toLowerCase();
+        if (seen.has(key)) continue;
         seen.add(key);
-        // store stripped version if it had bracket
-        const stripped = stripBracket(cleaned);
-        if (stripped !== cleaned) {
-          merged.push(stripped);
-          seen.add(stripped);
-        } else {
-          merged.push(cleaned);
-        }
+        merged.push(cleaned);
       }
     }
     return merged.join("\n\n");
+  },
+
+  stripColourCode(value) {
+    return String(value || "")
+      .replace(/^\s*\[(?:y|yellow|o|orange|r|red|e|grey|gray|g|green|b|blue|bl|p|purple|m|magenta|pink)\]\s*/i, "")
+      .trim();
+  },
+
+  normalizeAnnotationText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFKC")
+      .replace(/-\s*\n\s*/g, "")
+      .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  },
+
+  annotationPositionAnchor(annotation) {
+    const raw = annotation.annotationPosition || annotation.position;
+    let position = raw;
+    if (typeof raw === "string") {
+      try { position = JSON.parse(raw); } catch (_error) { return raw; }
+    }
+    if (!position || typeof position !== "object") return "";
+    if (position.type === "FragmentSelector" && position.value) {
+      const value = String(position.value);
+      const finalComma = value.lastIndexOf(",");
+      return `epub:${finalComma > 0 ? value.slice(0, finalComma) : value}`;
+    }
+    if (Number.isInteger(position.pageIndex) && Array.isArray(position.rects) && position.rects.length) {
+      const rect = position.rects[0] || [];
+      const x = Number(rect[0]);
+      const y = Number(rect[1]);
+      return `pdf:${position.pageIndex}:${x.toFixed(1)}:${y.toFixed(1)}`;
+    }
+    return this.normalizePosition(position);
+  },
+
+  areImportedDuplicates(left, right) {
+    const leftAnchor = this.annotationPositionAnchor(left);
+    const rightAnchor = this.annotationPositionAnchor(right);
+    if (!leftAnchor || leftAnchor !== rightAnchor) return false;
+    const leftPosition = this.normalizePosition(left.annotationPosition || left.position);
+    const rightPosition = this.normalizePosition(right.annotationPosition || right.position);
+    if (leftPosition && leftPosition === rightPosition) return true;
+    const leftText = this.normalizeAnnotationText(left.annotationText || left.text);
+    const rightText = this.normalizeAnnotationText(right.annotationText || right.text);
+    if (!leftText || !rightText) return false;
+    if (leftText === rightText) return true;
+    const shorter = leftText.length < rightText.length ? leftText : rightText;
+    const longer = shorter === leftText ? rightText : leftText;
+    return shorter.length >= 20 && longer.startsWith(shorter);
+  },
+
+  async collectImportedAnnotations() {
+    const annotations = [];
+    let allItems = [];
+    if (Zotero.DB && Zotero.DB.columnQueryAsync) {
+      const ids = await Zotero.DB.columnQueryAsync("SELECT itemID FROM itemAnnotations");
+      allItems = Zotero.Items.getAsync ? await Zotero.Items.getAsync(ids) : Zotero.Items.get(ids);
+    } else if (Zotero.Items.getAll) {
+      allItems = await Zotero.Items.getAll();
+    }
+    for (const item of allItems || []) {
+      if (!item || !item.isAnnotation || !item.isAnnotation()) continue;
+      if (this.hasKindleImportTag(item)) annotations.push(item);
+    }
+    return annotations;
+  },
+
+  async maintainImportedAnnotations(annotations, dryRun, results) {
+    if (!results.maintenanceDeletedIds) results.maintenanceDeletedIds = [];
+    const byAttachment = new Map();
+    for (const annotation of annotations) {
+      const parentID = annotation.parentItemID || annotation.parentID;
+      if (!byAttachment.has(parentID)) byAttachment.set(parentID, []);
+      byAttachment.get(parentID).push(annotation);
+    }
+
+    for (const group of byAttachment.values()) {
+      group.sort((a, b) =>
+        this.normalizeAnnotationText(b.annotationText).length -
+        this.normalizeAnnotationText(a.annotationText).length
+      );
+      const kept = [];
+      for (const annotation of group) {
+        const canonicalComment = this.mergeComments(annotation.annotationComment, "");
+        if (String(annotation.annotationComment || "") !== canonicalComment) {
+          annotation.annotationComment = canonicalComment;
+          results.updatedComments += 1;
+          if (!dryRun) await this.saveExistingAnnotation(annotation);
+        }
+
+        const duplicateOf = kept.find((candidate) => this.areImportedDuplicates(candidate, annotation));
+        if (!duplicateOf) {
+          kept.push(annotation);
+          continue;
+        }
+        const mergedComment = this.mergeComments(duplicateOf.annotationComment, annotation.annotationComment);
+        if (duplicateOf.annotationComment !== mergedComment) {
+          duplicateOf.annotationComment = mergedComment;
+          results.updatedComments += 1;
+          if (!dryRun) await this.saveExistingAnnotation(duplicateOf);
+        }
+        if (!dryRun) await annotation.eraseTx();
+        const keptClippingIds = new Set(
+          this.existingTags(duplicateOf)
+            .filter((tag) => tag.startsWith("kindle-id:"))
+            .map((tag) => tag.slice("kindle-id:".length))
+        );
+        for (const tag of this.existingTags(annotation)) {
+          const clippingID = tag.startsWith("kindle-id:")
+            ? tag.slice("kindle-id:".length)
+            : "";
+          if (clippingID && !keptClippingIds.has(clippingID)) {
+            results.maintenanceDeletedIds.push(clippingID);
+          }
+        }
+        results.removedDuplicates += 1;
+      }
+    }
   },
 
   existingSortIndex(annotation) {
@@ -605,6 +759,23 @@ var KindleZoteroImporter = {
 
   hasKindleImportTag(annotation) {
     return this.existingTags(annotation).includes("kindle-import");
+  },
+
+  commentForExistingAnnotation(annotation, newComment, previousImportedComment) {
+    if (!this.hasKindleImportTag(annotation) || previousImportedComment === undefined) {
+      return this.mergeComments(annotation.annotationComment, newComment);
+    }
+    const previousParts = new Set(
+      String(previousImportedComment || "")
+        .split(/\n\s*\n/)
+        .map((part) => this.stripColourCode(part).toLowerCase())
+        .filter(Boolean)
+    );
+    const manualParts = String(annotation.annotationComment || "")
+      .split(/\n\s*\n/)
+      .filter((part) => !previousParts.has(this.stripColourCode(part).toLowerCase()))
+      .join("\n\n");
+    return this.mergeComments(manualParts, newComment);
   },
 
   confirmRecreateForSortIndex(entry, existingAnnotation, oldSortIndex, newSortIndex) {
@@ -643,6 +814,37 @@ var KindleZoteroImporter = {
     throw new Error("Existing annotation cannot be saved by this Zotero build");
   },
 
+  async reconcileWriterState(path, plan, results) {
+    const plannedIds = new Set((plan.annotations || []).map((entry) => entry.clipping_id));
+    const failedIds = new Set(
+      (results.failed || [])
+        .map((failure) => failure.clipping_id)
+        .filter((clippingID) => plannedIds.has(clippingID))
+    );
+    plan.write_failed_ids = Array.from(failedIds).sort();
+    plan.delete_failed_ids = Array.from(new Set(results.failedDeletionIds || [])).sort();
+    const maintenanceDeletedIds = new Set(results.maintenanceDeletedIds || []);
+    if (failedIds.size) {
+      plan.annotations = (plan.annotations || []).filter(
+        (entry) => !failedIds.has(entry.clipping_id)
+      );
+      plan.all_annotations = (plan.all_annotations || []).filter(
+        (entry) => !failedIds.has(entry.clipping_id)
+      );
+    }
+    if (maintenanceDeletedIds.size) {
+      plan.annotations = (plan.annotations || []).filter(
+        (entry) => !maintenanceDeletedIds.has(entry.clipping_id)
+      );
+      plan.all_annotations = (plan.all_annotations || []).filter(
+        (entry) => !maintenanceDeletedIds.has(entry.clipping_id)
+      );
+    }
+    plan.delta_annotation_count = (plan.annotations || []).length;
+    plan.annotation_count = (plan.all_annotations || plan.annotations || []).length;
+    await Zotero.File.putContentsAsync(path, JSON.stringify(plan, null, 2) + "\n");
+  },
+
   async writeAnnotations(plan, dryRun, onProgress) {
     if (plan.format !== "kindle-zotero-importer.zotero-writer-plan.v1") {
       throw new Error(`Unsupported plan format: ${plan.format}`);
@@ -660,75 +862,31 @@ var KindleZoteroImporter = {
       recreateDeclined: 0,
       removedDuplicates: 0,
       deletedForIncremental: 0,
+      failedDeletionIds: [],
+      maintenanceDeletedIds: [],
       failed: [],
     };
-    // Incremental deletions: remove annotations whose clipping_id is no longer present
-    if (!dryRun && plan.deletions && plan.deletions.length) {
-      const deletionIds = new Set(plan.deletions);
-      try {
-        // Find all annotations with kindle-id tag
-        const allAnnotations = [];
-        // Collect via attachments to be safe
-        const allItems = Zotero.Items.getAll ? await Zotero.Items.getAll() : [];
-        for (const item of allItems) {
-          if (item.isAnnotation && item.isAnnotation()) {
-            allAnnotations.push(item);
-          } else if (item.getAnnotations) {
-            const anns = item.getAnnotations();
-            for (const a of anns) allAnnotations.push(a);
-          }
-        }
-        // Deduplicate
-        const seen = new Set();
-        for (const ann of allAnnotations) {
-          if (!ann || seen.has(ann.id)) continue;
-          seen.add(ann.id);
-          const tags = this.existingTags(ann);
-          for (const tag of tags) {
-            if (tag.startsWith("kindle-id:")) {
-              const id = tag.substring("kindle-id:".length);
-              if (deletionIds.has(id)) {
-                await ann.eraseTx();
-                results.deletedForIncremental += 1;
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        Zotero.logError(e);
+    let importedAnnotations = [];
+    let maintenanceReady = false;
+    try {
+      importedAnnotations = await this.collectImportedAnnotations();
+      await this.maintainImportedAnnotations(importedAnnotations, dryRun, results);
+      if (!dryRun && results.removedDuplicates) {
+        importedAnnotations = await this.collectImportedAnnotations();
       }
+      maintenanceReady = true;
+    } catch (error) {
+      Zotero.logError(error);
+      results.failed.push({ clipping_id: "maintenance", message: String(error) });
     }
     const existingByAttachment = new Map();
 
-    const normForDedup = (s) => String(s || "").toLowerCase().normalize("NFKC").replace(/-\s*\n\s*/g, "").replace(/[^\w\s]+/g, " ").replace(/\s+/g, " ").trim();
     const getExistingAnnotations = async (attachment) => {
       if (!existingByAttachment.has(attachment.id)) {
         const annotations = attachment.getAnnotations ? attachment.getAnnotations() : [];
         const byFingerprint = new Map();
-        const byNorm = new Map();
 
         for (const annotation of annotations) {
-          const norm = normForDedup(annotation.annotationText || "");
-          const dupNorm = byNorm.get(norm);
-          if (dupNorm && norm) {
-            // collapse identical highlights (e.g. My Clippings duplicates "forged its might…" x5)
-            const kept = dupNorm;
-            const keptHasComment = Boolean(kept.annotationComment);
-            const curHasComment = Boolean(annotation.annotationComment);
-            const duplicate = keptHasComment || !curHasComment ? annotation : kept;
-            const replacement = duplicate === annotation ? kept : annotation;
-            byNorm.set(norm, replacement);
-            // also update fingerprint map
-            const fpDup = this.existingAnnotationFingerprint(duplicate);
-            const fpKeep = this.existingAnnotationFingerprint(replacement);
-            byFingerprint.delete(fpDup);
-            byFingerprint.set(fpKeep, replacement);
-            if (!dryRun) await duplicate.eraseTx();
-            results.removedDuplicates += 1;
-            continue;
-          }
-          if (norm) byNorm.set(norm, annotation);
           const fingerprint = this.existingAnnotationFingerprint(annotation);
           const kept = byFingerprint.get(fingerprint);
           if (!kept) {
@@ -754,6 +912,7 @@ var KindleZoteroImporter = {
     };
 
     let completed = 0;
+    const successfulEntries = new Map();
     for (const entry of plan.annotations) {
       try {
         const attachment = Zotero.Items.get(entry.attachment_item_id);
@@ -771,17 +930,30 @@ var KindleZoteroImporter = {
 
         const existingAnnotations = await getExistingAnnotations(attachment);
         const fingerprint = this.annotationFingerprint(annotation);
-        const existingAnnotation = existingAnnotations.get(fingerprint);
+        const existingAnnotation = existingAnnotations.get(fingerprint) ||
+          Array.from(existingAnnotations.values()).find(
+            (candidate) => this.areImportedDuplicates(candidate, annotation)
+          );
         if (existingAnnotation) {
-          const mergedComment = this.mergeComments(
-            existingAnnotation.annotationComment,
-            annotation.comment
+          const mergedComment = this.commentForExistingAnnotation(
+            existingAnnotation,
+            annotation.comment,
+            entry.previous_imported_comment
           );
           let changed = false;
-          if (mergedComment && existingAnnotation.annotationComment !== mergedComment) {
+          if (existingAnnotation.annotationComment !== mergedComment) {
             existingAnnotation.annotationComment = mergedComment;
             changed = true;
             results.updatedComments += 1;
+          }
+
+          const existingTags = new Set(this.existingTags(existingAnnotation));
+          for (const tag of annotation.tags || []) {
+            const name = tag.name || tag.tag;
+            if (!name || existingTags.has(name) || !existingAnnotation.addTag) continue;
+            existingAnnotation.addTag(name);
+            existingTags.add(name);
+            changed = true;
           }
 
           // colour update (British spelling in code handles both)
@@ -836,12 +1008,14 @@ var KindleZoteroImporter = {
               });
               results.recreatedForSortIndex += 1;
               results.skippedExisting += 1;
+              successfulEntries.set(entry.clipping_id, entry);
               continue;
             }
           } else if (sortIndexChanged && dryRun) {
             results.updatedSortIndex += 1;
           }
           results.skippedExisting += 1;
+          successfulEntries.set(entry.clipping_id, entry);
           continue;
         }
 
@@ -856,6 +1030,7 @@ var KindleZoteroImporter = {
           annotationText: annotation.text || "",
         });
         results.created += 1;
+        successfulEntries.set(entry.clipping_id, entry);
       } catch (error) {
         results.failed.push({
           clipping_id: entry.clipping_id,
@@ -866,6 +1041,40 @@ var KindleZoteroImporter = {
         completed += 1;
         if (onProgress) {
           onProgress(completed, plan.annotations.length);
+        }
+      }
+    }
+
+    if (!dryRun && plan.deletions && plan.deletions.length) {
+      const deletionIds = new Set(plan.deletions);
+      const alreadyDeletedIds = new Set(results.maintenanceDeletedIds);
+      if (!maintenanceReady) {
+        results.failedDeletionIds.push(...deletionIds);
+      } else {
+        for (const ann of importedAnnotations) {
+          for (const tag of this.existingTags(ann)) {
+            if (!tag.startsWith("kindle-id:")) continue;
+            const id = tag.slice("kindle-id:".length);
+            if (!deletionIds.has(id) || alreadyDeletedIds.has(id)) break;
+            const replacement = successfulEntries.get(id);
+            if (replacement) {
+              const sameAttachment = (ann.parentItemID || ann.parentID) === replacement.attachment_item_id;
+              const sameFingerprint = this.existingAnnotationFingerprint(ann) ===
+                this.annotationFingerprint(replacement.annotation);
+              if (sameAttachment && sameFingerprint) break;
+            } else if ((plan.annotations || []).some((entry) => entry.clipping_id === id)) {
+              results.failedDeletionIds.push(id);
+              break;
+            }
+            try {
+              await ann.eraseTx();
+              results.deletedForIncremental += 1;
+            } catch (error) {
+              results.failedDeletionIds.push(id);
+              results.failed.push({ clipping_id: id, message: `Deletion failed: ${error}` });
+            }
+            break;
+          }
         }
       }
     }

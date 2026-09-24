@@ -90,6 +90,9 @@
     .muted { color: var(--muted); font-size: 12px; }
     .highlight-text { max-width: 520px; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.45; font-family: inherit; }
     .integrated-meta { font-size: 10.5px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+    .pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 10px 0; color: var(--muted); font-size: 11px; }
+    .pagination button, .pagination select { width: auto; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); font: inherit; }
+    .pagination button:disabled { color: var(--faint); background: var(--panel-soft); cursor: not-allowed; }
     ::selection { background: var(--accent); color: white; }
   </style>
   <script>
@@ -175,6 +178,41 @@
         if (el) el.textContent = `${minutes}:${String(seconds % 60).padStart(2, '0')} elapsed`;
       },
 
+      async collectorCredentials() {
+        let anonId = '';
+        let token = '';
+        try { anonId = Services.prefs.getCharPref("extensions.kindleZoteroImporter.collectorAnonId"); } catch(e) {}
+        try { token = Services.prefs.getCharPref("extensions.kindleZoteroImporter.collectorToken"); } catch(e) {}
+        if (anonId && token) return {anonId, token};
+        const response = await fetch("https://annotation.utkubilen.de/register", {method: "POST"});
+        if (!response.ok) throw new Error(`Collector registration returned HTTP ${response.status}`);
+        const credentials = await response.json();
+        if (!credentials.anonId || !credentials.token) throw new Error('Collector registration was incomplete');
+        Services.prefs.setCharPref("extensions.kindleZoteroImporter.collectorAnonId", credentials.anonId);
+        Services.prefs.setCharPref("extensions.kindleZoteroImporter.collectorToken", credentials.token);
+        return credentials;
+      },
+
+      collectorBatches(anonId, data) {
+        const batches = [];
+        let current = [];
+        for (const item of data) {
+          const candidate = current.concat(item);
+          const bytes = new TextEncoder().encode(JSON.stringify({anonId, data: candidate})).length;
+          if (!current.length && bytes > 1500000) {
+            throw new Error('One annotation exceeds the collector request limit');
+          }
+          if (current.length && (current.length >= 200 || bytes > 1500000)) {
+            batches.push(current);
+            current = [item];
+          } else {
+            current = candidate;
+          }
+        }
+        if (current.length) batches.push(current);
+        return batches;
+      },
+
       updateProgress(percent, stage, detail) {
         const prog = document.getElementById('progress');
         if (prog) prog.value = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -186,7 +224,7 @@
         if (pctEl) pctEl.textContent = `${Math.round(Number(percent) || 0)}%`;
       },
 
-      completeRun(summary, results, data) {
+      async completeRun(summary, results, data) {
         this.running = false;
         clearInterval(this.timer);
         this.updateProgress(100, 'Import complete', 'Annotations have been checked and saved in Zotero');
@@ -219,20 +257,14 @@
           grid.appendChild(makeCard(results.updatedComments + results.updatedSortIndex, 'updated'));
           grid.appendChild(makeCard(results.failed.length, 'failed'));
           resultsEl.appendChild(grid);
-          // Opt-in prompt for anonymised sharing (once, after first successful import)
-          try {
-            const hasAsked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare");
-          } catch(e) {
-            // First run: default ON, allow opt-out
-            Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", true);
-            try {
-              const anonId = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-              Services.prefs.setCharPref("extensions.kindleZoteroImporter.anonId", anonId);
-            } catch(e2) {}
+          const consentVersion = 2;
+          let acceptedVersion = 0;
+          try { acceptedVersion = Services.prefs.getIntPref("extensions.kindleZoteroImporter.shareConsentVersion"); } catch(e) {}
+          if (acceptedVersion < consentVersion && (data.finalPlan?.annotations || []).length) {
+            const accepted = confirm("Share annotation data with the Kanzi developer?\n\nThis sends a random pseudonymous installation ID, publication metadata, raw highlight text and comments, hashes, colour, and dates to annotation.utkubilen.de. Free text may contain identifying information. The dashboard is private, but this data is not anonymous.\n\nChoose OK to opt in, or Cancel to keep sharing disabled. You can change this later in Settings.");
+            Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", accepted);
             Services.prefs.setBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare", true);
-            if (results.created > 0) {
-              alert("Anonymised sharing is enabled by default to help future development (only citation key, hashed highlight, colour, has comment + note, and dates — never your highlight text alone). You can opt out anytime in Settings → uncheck 'Share anonymised annotations'.");
-            }
+            Services.prefs.setIntPref("extensions.kindleZoteroImporter.shareConsentVersion", consentVersion);
           }
         }
         this.data = data;
@@ -243,45 +275,41 @@
         const bar = document.getElementById('reimport-bar');
         if (bar) bar.style.display = 'none';
         this.status(`${summary.counts.final_annotations || 0} positioned annotations processed; ${this.rows.length} review rows remain.`, results.failed.length > 0);
-        // Anonymised sharing if opted in — robust to missing prefs (British spelling)
+        // Pseudonymous sharing after explicit consent.
         try {
-          let share = true;
-          try { share = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized"); } catch(e) { share = true; }
+          let share = false;
+          try { share = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized"); } catch(e) {}
           if (share) {
-            let anonId = "anon";
-            try { anonId = Services.prefs.getCharPref("extensions.kindleZoteroImporter.anonId") || "anon"; } catch(e) { anonId = "anon"; }
-            // ensure anonId exists for next time
-            if (anonId === "anon") {
-              try {
-                anonId = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-                Services.prefs.setCharPref("extensions.kindleZoteroImporter.anonId", anonId);
-              } catch(e) {}
-            }
+            const {anonId, token} = await this.collectorCredentials();
             const anonData = (data.finalPlan?.annotations || []).map(a => ({
-              citation_key: a.citation_key,
-              doi: a.doi || null,
-              isbn: a.isbn || null,
-              issn: a.issn || null,
-              publication_title: a.publication_title || null,
-              clipping_id_hash: a.clipping_id ? a.clipping_id.slice(0,8) : null,
-              norm_hash: a.norm_hash || null,
-              fuzzy_hash: a.fuzzy_hash || null,
-              text: a.annotation?.text || "",
+              citation_key: (a.citation_key || '').slice(0, 512) || null,
+              doi: (a.doi || '').slice(0, 512) || null,
+              isbn: (a.isbn || '').slice(0, 512) || null,
+              issn: (a.issn || '').slice(0, 512) || null,
+              publication_title: (a.publication_title || '').slice(0, 1000) || null,
+              clipping_id_hash: (a.clipping_id || '').slice(0, 128) || null,
+              norm_hash: (a.norm_hash || '').slice(0, 256) || null,
+              fuzzy_hash: (a.fuzzy_hash || '').slice(0, 256) || null,
+              text: (a.annotation?.text || '').slice(0, 2000),
               color: a.annotation?.color,
               has_comment: !!(a.annotation?.comment),
-              comment: a.annotation?.comment || "",
-              comment_hash: a.annotation?.comment ? btoa(a.annotation.comment).slice(0,24) : null,
-              clipping_added_on_iso: a.clipping_added_on_iso,
-              integrated_at: a.integrated_at
+              comment: (a.annotation?.comment || '').slice(0, 2000),
+              comment_hash: null,
+              clipping_added_on_iso: (a.clipping_added_on_iso || '').slice(0, 64) || null,
+              integrated_at: (a.integrated_at || '').slice(0, 64) || null
             }));
-            // Fire and forget, no text sent — private, not public (annotation.utkubilen.de)
-            fetch("https://annotation.utkubilen.de/highlights", {
-              method: "POST",
-              headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({anonId, data: anonData})
-            }).catch(()=>{});
+            for (const batch of this.collectorBatches(anonId, anonData)) {
+              const response = await fetch("https://annotation.utkubilen.de/highlights", {
+                method: "POST",
+                headers: {"Content-Type":"application/json", "Authorization": `Bearer ${token}`},
+                body: JSON.stringify({anonId, data: batch})
+              });
+              if (!response.ok) throw new Error(`Collector returned HTTP ${response.status}`);
+            }
           }
-        } catch(e) {}
+        } catch(e) {
+          this.status(`Import succeeded, but annotation sharing failed: ${e}`, true);
+        }
       },
 
       failRun(message) {
@@ -295,6 +323,11 @@
 
       getFullReimport() {
         const cb = document.getElementById('full-reimport-check');
+        return !!(cb && cb.checked);
+      },
+
+      getRetryUnresolved() {
+        const cb = document.getElementById('retry-unresolved-check');
         return !!(cb && cb.checked);
       },
 
@@ -614,8 +647,54 @@
         } catch { return String(iso).slice(0,10); }
       },
 
+      paginate(items, pageKey, pageSizeKey) {
+        const totalPages = Math.max(1, Math.ceil(items.length / this[pageSizeKey]));
+        if (this[pageKey] >= totalPages) this[pageKey] = totalPages - 1;
+        if (this[pageKey] < 0) this[pageKey] = 0;
+        const start = this[pageKey] * this[pageSizeKey];
+        return { rows: items.slice(start, start + this[pageSizeKey]), totalPages };
+      },
+
+      refreshPagination(containerId, pageKey, pageSizeKey, totalPages, refresh) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.textContent = '';
+        const button = (label, disabled, action) => {
+          const el = document.createElement('button');
+          el.textContent = label;
+          el.disabled = disabled;
+          if (!disabled) el.addEventListener('click', action);
+          return el;
+        };
+        container.appendChild(button('Previous', this[pageKey] === 0, () => {
+          this[pageKey] -= 1;
+          refresh();
+        }));
+        const status = document.createElement('span');
+        status.textContent = `Page ${this[pageKey] + 1} of ${totalPages}`;
+        container.appendChild(status);
+        container.appendChild(button('Next', this[pageKey] >= totalPages - 1, () => {
+          this[pageKey] += 1;
+          refresh();
+        }));
+        const select = document.createElement('select');
+        for (const size of [25, 50, 100, 200]) {
+          const option = document.createElement('option');
+          option.value = size;
+          option.textContent = `${size} per page`;
+          option.selected = size === this[pageSizeKey];
+          select.appendChild(option);
+        }
+        select.addEventListener('change', () => {
+          this[pageSizeKey] = Number(select.value);
+          this[pageKey] = 0;
+          refresh();
+        });
+        container.appendChild(select);
+      },
+
       getIntegratedHighlights() {
-        const anns = this.data.finalPlan?.annotations || [];
+        const anns = this.data.finalPlan?.all_annotations || this.data.finalPlan?.annotations || [];
         return anns.slice().sort((a,b) => (a.clipping_title || '').localeCompare(b.clipping_title || '') || (a.annotation?.text || '').localeCompare(b.annotation?.text || ''));
       },
 
@@ -639,82 +718,11 @@
         const dateMap = this.buildClippingDateMap();
         const filtered = needle ? all.filter(a => `${a.clipping_title} ${a.annotation?.text || ''} ${a.citation_key || ''} ${a.annotation?.pageLabel || ''} ${a.clipping_added_on_iso || ''} ${a.integrated_at || ''}`.toLowerCase().includes(needle)) : all;
         if (resetPage) this.integratedPage = 0;
-        const totalPages = Math.max(1, Math.ceil(filtered.length / this.integratedPageSize));
-        if (this.integratedPage >= totalPages) this.integratedPage = totalPages - 1;
-        const start = this.integratedPage * this.integratedPageSize;
-        const toShow = filtered.slice(start, start + this.integratedPageSize);
+        const page = this.paginate(filtered, 'integratedPage', 'integratedPageSize');
+        const totalPages = page.totalPages;
+        const toShow = page.rows;
         if (countEl) countEl.textContent = `${filtered.length} of ${all.length} — page ${this.integratedPage + 1}/${totalPages} (${this.integratedPageSize} per page)`;
-        // pagination controls
-        let pag = document.getElementById('integrated-pagination');
-        if (!pag) {
-          pag = document.createElement('div');
-          pag.id = 'integrated-pagination';
-          pag.style.display = 'flex';
-          pag.style.justifyContent = 'space-between';
-          pag.style.alignItems = 'center';
-          pag.style.margin = '8px 0';
-          pag.style.gap = '8px';
-          pag.style.flexWrap = 'wrap';
-          tbody.parentElement.parentElement.appendChild(pag);
-        }
-        pag.textContent = '';
-        const mkBtn = (label, disabled, onClick) => {
-          const b = document.createElement('button');
-          b.textContent = label;
-          b.disabled = disabled;
-          b.style.padding = '4px 8px';
-          b.style.border = '1px solid var(--line)';
-          b.style.background = disabled ? 'var(--panel-soft)' : 'var(--panel)';
-          b.style.borderRadius = 'var(--radius)';
-          b.style.cursor = disabled ? 'not-allowed' : 'pointer';
-          b.style.fontSize = '11px';
-          if (!disabled) b.addEventListener('click', onClick);
-          return b;
-        };
-        const left = document.createElement('div');
-        left.style.display = 'flex';
-        left.style.gap = '4px';
-        left.appendChild(mkBtn('‹ Prev', this.integratedPage === 0, () => { this.integratedPage--; this.refreshIntegrated(); }));
-        left.appendChild(mkBtn('Next ›', this.integratedPage >= totalPages - 1, () => { this.integratedPage++; this.refreshIntegrated(); }));
-        const mid = document.createElement('span');
-        mid.className = 'muted';
-        mid.textContent = `Page ${this.integratedPage + 1} of ${totalPages}`;
-        left.appendChild(mid);
-        pag.appendChild(left);
-        const right = document.createElement('div');
-        right.style.display = 'flex';
-        right.style.gap = '6px';
-        right.style.alignItems = 'center';
-        const sel = document.createElement('select');
-        sel.style.padding = '4px';
-        sel.style.border = '1px solid var(--line)';
-        sel.style.borderRadius = 'var(--radius)';
-        sel.style.fontSize = '11px';
-        for (const n of [25, 50, 100, 200, 500]) {
-          const opt = document.createElement('option');
-          opt.value = n;
-          opt.textContent = n + ' per page';
-          if (n === this.integratedPageSize) opt.selected = true;
-          sel.appendChild(opt);
-        }
-        const optAll = document.createElement('option');
-        optAll.value = filtered.length || 500;
-        optAll.textContent = 'Show all';
-        sel.appendChild(optAll);
-        sel.addEventListener('change', () => { this.integratedPageSize = parseInt(sel.value, 10); this.integratedPage = 0; this.refreshIntegrated(); });
-        right.appendChild(sel);
-        const expand = document.createElement('button');
-        expand.textContent = 'Expand 50 →';
-        expand.title = 'Show next 50';
-        expand.style.padding = '4px 8px';
-        expand.style.border = '1px solid var(--line)';
-        expand.style.background = 'var(--panel)';
-        expand.style.borderRadius = 'var(--radius)';
-        expand.style.cursor = 'pointer';
-        expand.style.fontSize = '11px';
-        expand.addEventListener('click', () => { this.integratedPageSize += 50; this.refreshIntegrated(); });
-        right.appendChild(expand);
-        pag.appendChild(right);
+        this.refreshPagination('integrated-pagination', 'integratedPage', 'integratedPageSize', totalPages, () => this.refreshIntegrated());
         if (!toShow.length) {
           const tr = document.createElement('tr');
           const td = document.createElement('td');
@@ -768,7 +776,7 @@
         }
       },
 
-      refreshMappings() {
+      refreshMappings(resetPage = false) {
         const tbody = document.getElementById('mappings-rows');
         const countEl = document.getElementById('mappings-count');
         if (!tbody) return;
@@ -776,7 +784,10 @@
         const needle = (document.getElementById('mappings-search')?.value || '').toLowerCase();
         const overrides = this.data.persistentOverrides?.overrides || [];
         const filtered = needle ? overrides.filter(o => `${o.clipping_title} ${o.resolution?.citation_key || ''} ${o.resolution?.zotero_key || ''} ${o.resolution?.ignore ? 'ignored' : ''}`.toLowerCase().includes(needle)) : overrides;
-        if (countEl) countEl.textContent = `${filtered.length} of ${overrides.length} mappings`;
+        if (resetPage) this.mappingsPage = 0;
+        const page = this.paginate(filtered, 'mappingsPage', 'mappingsPageSize');
+        if (countEl) countEl.textContent = `${filtered.length} of ${overrides.length} mappings — page ${this.mappingsPage + 1}/${page.totalPages}`;
+        this.refreshPagination('mappings-pagination', 'mappingsPage', 'mappingsPageSize', page.totalPages, () => this.refreshMappings());
         if (!filtered.length) {
           const tr = document.createElement('tr');
           const td = document.createElement('td');
@@ -786,7 +797,7 @@
           tbody.appendChild(tr);
           return;
         }
-        for (const entry of filtered) {
+        for (const entry of page.rows) {
           const tr = document.createElement('tr');
           const tdTitle = document.createElement('td');
           tdTitle.textContent = entry.clipping_title;
@@ -886,6 +897,7 @@
           this.settings = { ...this.settings, ...newSettings };
           Services.prefs.setBoolPref("extensions.kindleZoteroImporter.shareAnonymized", shareAnonymized);
           Services.prefs.setBoolPref("extensions.kindleZoteroImporter.askedAnonymizedShare", true);
+          Services.prefs.setIntPref("extensions.kindleZoteroImporter.shareConsentVersion", 2);
           if (shareAnonymized) {
             try {
               Services.prefs.getCharPref("extensions.kindleZoteroImporter.anonId");
@@ -1005,6 +1017,25 @@
         fullLabel.title = 'When checked, re-processes all 2379 clippings from scratch (slow). Unchecked = incremental (only new/changed highlights, fast).';
         fullRow.appendChild(fullLabel);
         panel.appendChild(fullRow);
+        const retryRow = document.createElement('div');
+        retryRow.style.marginTop = '6px';
+        retryRow.style.display = 'flex';
+        retryRow.style.alignItems = 'center';
+        retryRow.style.gap = '6px';
+        const retryCheck = document.createElement('input');
+        retryCheck.type = 'checkbox';
+        retryCheck.id = 'retry-unresolved-check';
+        retryCheck.style.width = 'auto';
+        retryRow.appendChild(retryCheck);
+        const retryLabel = document.createElement('label');
+        retryLabel.htmlFor = 'retry-unresolved-check';
+        retryLabel.textContent = 'Retry unresolved attachments and positions';
+        retryLabel.style.margin = '0';
+        retryLabel.style.fontSize = '12px';
+        retryLabel.style.color = 'var(--muted)';
+        retryLabel.title = 'Retries prior matching and positioning failures without rebuilding annotations that already succeeded.';
+        retryRow.appendChild(retryLabel);
+        panel.appendChild(retryRow);
         root.appendChild(panel);
 
         const resultsDiv = document.createElement('div');
@@ -1081,6 +1112,10 @@
         iTbody.id='integrated-rows';
         iTable.appendChild(iTbody);
         integratedTab.appendChild(iTable);
+        const iPagination = document.createElement('div');
+        iPagination.id = 'integrated-pagination';
+        iPagination.className = 'pagination';
+        integratedTab.appendChild(iPagination);
         root.appendChild(integratedTab);
 
         const conflictsTab = document.createElement('div');
@@ -1129,7 +1164,7 @@
         search.placeholder = 'Filter conflicts by title, status, candidate, citekey...';
         search.style.width = '320px';
         search.style.maxWidth = '50%';
-        search.addEventListener('input', () => this.refreshRows());
+        search.addEventListener('input', () => this.refreshRows(true));
         searchWrap.appendChild(search);
         conflictsTab.appendChild(searchWrap);
         const table = document.createElement('table');
@@ -1140,6 +1175,10 @@
         tbody.id = 'rows';
         table.appendChild(tbody);
         conflictsTab.appendChild(table);
+        const cPagination = document.createElement('div');
+        cPagination.id = 'conflicts-pagination';
+        cPagination.className = 'pagination';
+        conflictsTab.appendChild(cPagination);
         root.appendChild(conflictsTab);
 
         const mappingsTab = document.createElement('div');
@@ -1161,7 +1200,7 @@
         mSearch.placeholder = 'Filter mappings by title, citekey...';
         mSearch.style.width = '320px';
         mSearch.style.maxWidth = '50%';
-        mSearch.addEventListener('input', () => this.refreshMappings());
+        mSearch.addEventListener('input', () => this.refreshMappings(true));
         mSearchWrap.appendChild(mSearch);
         mappingsTab.appendChild(mSearchWrap);
         const mCount = document.createElement('div');
@@ -1177,6 +1216,10 @@
         mTbody.id = 'mappings-rows';
         mTable.appendChild(mTbody);
         mappingsTab.appendChild(mTable);
+        const mPagination = document.createElement('div');
+        mPagination.id = 'mappings-pagination';
+        mPagination.className = 'pagination';
+        mappingsTab.appendChild(mPagination);
         root.appendChild(mappingsTab);
 
         const settingsTab = document.createElement('div');
@@ -1207,11 +1250,11 @@
         const shareCheck = document.createElement('input');
         shareCheck.type = 'checkbox';
         shareCheck.id = 'setting-shareAnonymized';
-        try { shareCheck.checked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized"); } catch(e) { shareCheck.checked = true; }
+        try { shareCheck.checked = Services.prefs.getBoolPref("extensions.kindleZoteroImporter.shareAnonymized"); } catch(e) { shareCheck.checked = false; }
         shareRow.appendChild(shareCheck);
         const shareLabel = document.createElement('label');
         shareLabel.htmlFor = 'setting-shareAnonymized';
-        shareLabel.textContent = 'Share anonymised annotations to help future development (no highlight text, only citation key + hashed highlight + notes if any)';
+        shareLabel.textContent = 'Share annotation data to help future development (opt in: pseudonymous ID, publication metadata, raw highlight text and comments, hashes, colour, and dates)';
         shareLabel.style.margin = '0';
         shareLabel.style.fontSize = '12px';
         shareRow.appendChild(shareLabel);
@@ -1550,17 +1593,17 @@
         this.makeTableResizable(document.querySelector('#tab-conflicts table'));
         this.makeTableResizable(document.querySelector('#tab-integrated table'));
         this.makeTableResizable(document.querySelector('#tab-mappings table'));
-        this.makeTableSortable(document.querySelector('#tab-conflicts table'));
-        this.makeTableSortable(document.querySelector('#tab-integrated table'));
-        this.makeTableSortable(document.querySelector('#tab-mappings table'));
       },
 
-      refreshRows() {
+      refreshRows(resetPage = false) {
         const tbody = document.getElementById('rows');
         if (!tbody) return;
         tbody.textContent = '';
         const needle = (document.getElementById('search')?.value || '').toLowerCase();
-        const filtered = this.rows.filter(row => `${row.source} ${row.status} ${row.title} ${row.detail || ''} ${(row.candidates || []).map(c => `${c.citation_key} ${c.title}`).join(' ')}`.toLowerCase().includes(needle)).slice(0,300);
+        const filtered = this.rows.filter(row => `${row.source} ${row.status} ${row.title} ${row.detail || ''} ${(row.candidates || []).map(c => `${c.citation_key} ${c.title}`).join(' ')}`.toLowerCase().includes(needle));
+        if (resetPage) this.conflictsPage = 0;
+        const page = this.paginate(filtered, 'conflictsPage', 'conflictsPageSize');
+        this.refreshPagination('conflicts-pagination', 'conflictsPage', 'conflictsPageSize', page.totalPages, () => this.refreshRows());
         if (!filtered.length) {
           const tr = document.createElement('tr');
           const td = document.createElement('td');
@@ -1570,8 +1613,8 @@
           tbody.appendChild(tr);
           return;
         }
-        for (let idx = 0; idx < filtered.length; idx++) {
-          const row = filtered[idx];
+        for (let idx = 0; idx < page.rows.length; idx++) {
+          const row = page.rows[idx];
           const globalIndex = this.rows.indexOf(row);
           const tr = document.createElement('tr');
           const tdSource = document.createElement('td');

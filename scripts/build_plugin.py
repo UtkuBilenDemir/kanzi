@@ -60,12 +60,19 @@ def main() -> int:
                 info.create_system = 3
                 info.external_attr = 0o644 << 16
                 archive.writestr(info, path.read_bytes(), zipfile.ZIP_DEFLATED)
+        runtime_files = [ROOT / "plugin_runner.py", *(ROOT / "src" / "kindle_zotero_importer").glob("*.py")]
+        for path in runtime_files:
+            archive_name = "runtime/" + str(path.relative_to(ROOT))
+            info = zipfile.ZipInfo(archive_name)
+            info.create_system = 3
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, path.read_bytes(), zipfile.ZIP_DEFLATED)
 
     with zipfile.ZipFile(OUTPUT) as archive:
         names = set(archive.namelist())
-        if "manifest.json" not in names or "bootstrap.js" not in names:
+        if not {"manifest.json", "bootstrap.js", "runtime/plugin_runner.py"}.issubset(names):
             raise SystemExit(
-                "Invalid XPI: manifest.json and bootstrap.js must be at archive root"
+                "Invalid XPI: plugin files and Python runtime are required"
             )
 
     print(f"Built {OUTPUT}")

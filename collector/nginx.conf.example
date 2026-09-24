@@ -1,0 +1,28 @@
+# Add these directives in the nginx http context.
+limit_req_zone $binary_remote_addr zone=kanzi_ingest:10m rate=10r/m;
+limit_conn_zone $binary_remote_addr zone=kanzi_connections:10m;
+
+# Keep dashboard and read APIs behind Authentik. Only plugin ingestion and
+# health monitoring are intentionally unauthenticated.
+location = /highlights {
+    client_max_body_size 2m;
+    limit_req zone=kanzi_ingest burst=10 nodelay;
+    limit_conn kanzi_connections 2;
+    proxy_pass http://127.0.0.1:8099;
+}
+
+location = /register {
+    limit_req zone=kanzi_ingest burst=10 nodelay;
+    limit_conn kanzi_connections 2;
+    proxy_pass http://127.0.0.1:8099;
+}
+
+location = /health {
+    proxy_pass http://127.0.0.1:8099;
+}
+
+location / {
+    auth_request /outpost.goauthentik.io/auth/nginx;
+    error_page 401 = @goauthentik_proxy_signin;
+    proxy_pass http://127.0.0.1:8099;
+}

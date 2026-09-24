@@ -4,7 +4,7 @@ def test_final_includes_kindle_id_tag():
     positioned = {
         "format":"x",
         "items":[
-            {"status":"positioned","clipping":{"id":"abc123","title":"T","added_on":None,"added_on_iso":None},
+            {"status":"positioned","clipping":{"id":"abc123","title":"T","added_on":None,"added_on_iso":None,"note_ids":["note1"]},
              "zotero":{"attachment":{"item_id":1,"key":"K1"},"parent_item_id":10,"parent_key":"P1","citation_key":"c1"},
              "annotation":{"type":"highlight","text":"hi","position":{"type":"FragmentSelector","value":"cfi"}}}
         ]
@@ -15,6 +15,7 @@ def test_final_includes_kindle_id_tag():
     assert {"name":"kindle-import"} in tags
     assert {"name":"kindle-id:abc123"} in tags
     assert plan["annotations"][0]["clipping_id"]=="abc123"
+    assert plan["annotations"][0]["note_ids"] == ["note1"]
 
 def test_final_skips_non_positioned():
     positioned = {"format":"x","items":[{"status":"epub-text-not-found","clipping":{"id":"a"},"zotero":{},"annotation":{}}]}
