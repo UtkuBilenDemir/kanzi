@@ -1,7 +1,7 @@
 > [!CAUTION]
 > **This project has been heavily vibecoded.**
 
-# Kanzi — *K*indle *an*notations to *Z*otero *I*mporter
+# Kanzi — **K**indle **an**notations to **Z**otero **I**mporter
 
 Import Kindle `My Clippings.txt` highlights into Zotero as native annotations, directly inside Zotero. Once the required host tools are installed, imports run from the manager without CLI commands. Formerly *Kindle Zotero Importer*.
 
