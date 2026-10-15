@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -126,7 +127,12 @@ def _position_item(
             text_pages, item["clipping"]["text"], item["clipping"].get("page")
         )
         if page_index is None:
-            return _with_problem(item, "pdf-text-not-found")
+            failed = _with_problem(item, "pdf-text-not-found")
+            hint = _page_hint_text(text_pages, item["clipping"].get("page"))
+            if hint:
+                failed = dict(failed)
+                failed["page_hint"] = hint
+            return failed
         page_xml = xml_cache.setdefault(
             (extraction_path, page_index),
             extract_pdf_page_xml(extraction_path, page_index),
@@ -152,6 +158,8 @@ def _position_item(
     annotation["sortIndex"] = position.get("sortIndex")
     updated["annotation"] = annotation
     updated["status"] = "positioned"
+    if position.get("partial"):
+        updated["problems"] = [*item.get("problems", []), "partial-text-match"]
     return updated
 
 
@@ -227,6 +235,37 @@ def find_pdf_text_page(
         normalized_page, _ = _normalize_with_map(pages[index])
         if normalized_quote in normalized_page:
             return index
+    # Fallback: alphanumeric-only search tolerates PDF extraction artifacts
+    # such as "o f" for "of", hyphenation, and punctuation differences.
+    stripped_quote, _ = _strip_with_map(quote)
+    if stripped_quote and len(stripped_quote) >= 20:
+        for index in page_order:
+            stripped_page, _ = _strip_with_map(pages[index])
+            if stripped_quote in stripped_page:
+                return index
+        # Partial fallback: long highlights may span pages or contain a
+        # divergent middle (edition differences). Anchor to either half so
+        # Zotero-style word search behaviour is approximated.
+        for index in page_order:
+            stripped_page, _ = _strip_with_map(pages[index])
+            if _partial_stripped_hit(stripped_page, stripped_quote):
+                return index
+        # Shingle fallback: scattered OCR substitutions (e.g. Kindle
+        # "yadsınaraz" vs PDF "yadsınamaz") break every long substring but
+        # leave most 6-word runs intact. Rank pages by shingle hits.
+        quote_words = _quote_words(normalized_quote)
+        if len(quote_words) >= 6:
+            required = 2 if len(quote_words) >= 12 else 1
+            best_index: int | None = None
+            best_hits = 0
+            for index in page_order:
+                normalized_page, _ = _normalize_with_map(pages[index])
+                hits = _shingle_hits(normalized_page, quote_words)
+                if hits > best_hits:
+                    best_hits = hits
+                    best_index = index
+            if best_index is not None and best_hits >= required:
+                return best_index
     return None
 
 
@@ -290,25 +329,52 @@ def find_pdf_rects(
     text = " ".join(word.text for word in page.words)
     normalized_text, text_map = _normalize_with_map(text)
     start = normalized_text.find(normalized_quote)
-    if start < 0:
+    raw_start: int | None = None
+    raw_end: int | None = None
+    partial = False
+    if start >= 0:
+        end = start + len(normalized_quote)
+        raw_start = text_map[start]
+        raw_end = text_map[end - 1] + 1
+    else:
+        stripped_quote, _ = _strip_with_map(quote)
+        if stripped_quote and len(stripped_quote) >= 20:
+            stripped_text, stripped_map = _strip_with_map(text)
+            strip_start = stripped_text.find(stripped_quote)
+            if strip_start >= 0:
+                strip_end = strip_start + len(stripped_quote)
+                raw_start = stripped_map[strip_start]
+                raw_end = stripped_map[strip_end - 1] + 1
+            else:
+                hit = _partial_stripped_range(stripped_text, stripped_quote)
+                if hit is not None:
+                    strip_start, strip_end = hit
+                    raw_start = stripped_map[strip_start]
+                    raw_end = stripped_map[strip_end - 1] + 1
+                    partial = True
+                else:
+                    span = _shingle_span(normalized_text, _quote_words(normalized_quote))
+                    if span is not None:
+                        raw_start = text_map[span[0]]
+                        raw_end = text_map[span[1] - 1] + 1
+                        partial = True
+    if raw_start is None or raw_end is None:
         return None
-    end = start + len(normalized_quote)
-    raw_start = text_map[start]
-    raw_end = text_map[end - 1] + 1
     matched_words = [
         word for word in page.words if word.end >= raw_start and word.start <= raw_end
     ]
     if not matched_words:
         return None
-    pdf_width, pdf_height = size_cache.setdefault(
-        (path, page.index),
-        _pdf_page_size(path, page.index + 1, page.width, page.height),
-    )
+    size_key = (path, page.index)
+    if size_key not in size_cache:
+        size_cache[size_key] = _pdf_page_size(path, page.index + 1, page.width, page.height)
+    pdf_width, pdf_height = size_cache[size_key]
     rects = _word_rects(matched_words, page, pdf_width, pdf_height)
     return {
         "pageIndex": page.index,
         "rects": rects,
         "sortIndex": f"{page.index:05d}|{int(rects[0][1]):06d}|{int(rects[0][0]):05d}",
+        "partial": partial,
     }
 
 
@@ -361,6 +427,11 @@ def _pdf_page_size(
 
 
 def _normalize_with_map(text: str) -> tuple[str, list[int]]:
+    text = unicodedata.normalize("NFKC", text)
+    text = (
+        text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+        .replace("–", "-").replace("—", "-").replace("\xa0", " ").replace("\xad", "")
+    )
     normalized = []
     mapping = []
     last_was_space = False
@@ -378,6 +449,112 @@ def _normalize_with_map(text: str) -> tuple[str, list[int]]:
         normalized.pop()
         mapping.pop()
     return "".join(normalized), mapping
+
+
+def _strip_with_map(text: str) -> tuple[str, list[int]]:
+    """Alphanumeric-only folding with index mapping.
+
+    Removes spaces and punctuation so PDF artifacts like "o f" for "of",
+    hyphenated line breaks, and curly-quote/dash variants still match.
+    Mapping points back into the input string for rect recovery.
+    """
+    text = unicodedata.normalize("NFKC", text).casefold()
+    stripped: list[str] = []
+    mapping: list[int] = []
+    for index, char in enumerate(text):
+        if char.isalnum():
+            stripped.append(char)
+            mapping.append(index)
+    return "".join(stripped), mapping
+
+
+def _partial_stripped_range(
+    haystack: str, quote: str, min_len: int = 30
+) -> tuple[int, int] | None:
+    """Best half-quote hit for long highlights spanning pages/editions."""
+    if len(quote) < min_len * 2:
+        return None
+    mid = len(quote) // 2
+    for part in (quote[:mid], quote[mid:]):
+        if len(part) < min_len:
+            continue
+        start = haystack.find(part)
+        if start >= 0:
+            return start, start + len(part)
+    return None
+
+
+def _partial_stripped_hit(haystack: str, quote: str, min_len: int = 30) -> bool:
+    return _partial_stripped_range(haystack, quote, min_len) is not None
+
+
+def _quote_words(normalized: str, width: int = 6) -> list[str]:
+    del width
+    words: list[str] = []
+    for token in normalized.split():
+        cleaned = "".join(char for char in token if char.isalnum())
+        if cleaned:
+            words.append(cleaned)
+    return words
+
+
+def _shingle_hits(normalized_page: str, quote_words: list[str], width: int = 6) -> int:
+    hits = 0
+    seen: set[tuple[str, ...]] = set()
+    for start in range(len(quote_words) - width + 1):
+        shingle = tuple(quote_words[start : start + width])
+        if shingle in seen:
+            continue
+        seen.add(shingle)
+        if " ".join(shingle) in normalized_page:
+            hits += 1
+    return hits
+
+
+def _shingle_span(
+    normalized_text: str, quote_words: list[str], width: int = 6
+) -> tuple[int, int] | None:
+    first: int | None = None
+    last: int | None = None
+    for start in range(len(quote_words) - width + 1):
+        needle = " ".join(quote_words[start : start + width])
+        at = normalized_text.find(needle)
+        if at >= 0:
+            end = at + len(needle)
+            first = at if first is None else min(first, at)
+            last = end if last is None else max(last, end)
+    if first is None or last is None:
+        return None
+    return first, last
+
+
+def _page_hint_text(
+    pages: list[str], kindle_page: str | None, radius: int = 1, limit: int = 1200
+) -> dict[str, Any] | None:
+    """Snippet of the PDF pages around the Kindle page hint.
+
+    Lets the user eyeball which part a `pdf-text-not-found` highlight
+    belongs to and place it manually. Truncated to keep artifacts small.
+    """
+    if not kindle_page or not kindle_page.isdigit():
+        return None
+    center = int(kindle_page) - 1
+    if center < 0 or center >= len(pages):
+        return None
+    parts = []
+    for index in range(max(0, center - radius), min(len(pages), center + radius + 1)):
+        snippet = " ".join(pages[index].split())
+        if snippet:
+            parts.append(f"[PDF p.{index + 1}] {snippet[:limit]}")
+    if not parts:
+        return None
+    return {
+        "kindle_page": kindle_page,
+        "pdf_pages": list(
+            range(max(1, center - radius + 1), min(len(pages), center + radius + 1) + 1)
+        ),
+        "text": "\n\n".join(parts)[: limit * 2 + 64],
+    }
 
 
 def _with_problem(item: dict[str, Any], problem: str) -> dict[str, Any]:

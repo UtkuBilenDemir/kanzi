@@ -34,6 +34,8 @@ class ZoteroItem:
     key: str
     item_type: str
     title: str | None
+    library_id: int | None = None
+    group_id: int | None = None
     creators: list[str] = field(default_factory=list)
     fields: dict[str, str] = field(default_factory=dict)
     attachments: list[ZoteroAttachment] = field(default_factory=list)
@@ -47,15 +49,19 @@ def build_zotero_index(db_path: str, storage_root: str | None = None) -> dict[st
         creators = _load_creators(connection)
         attachments = _load_attachments(connection, storage_root)
 
+    groups = _load_groups(connection)
     indexed_items: list[ZoteroItem] = []
     for row in items:
         fields = _metadata_for_item(row)
+        library_id = row["libraryID"]
         indexed_items.append(
             ZoteroItem(
                 item_id=row["itemID"],
                 key=row["key"],
                 item_type=row["typeName"],
                 title=fields.get("title"),
+                library_id=library_id,
+                group_id=groups.get(library_id),
                 creators=creators.get(row["itemID"], []),
                 fields=fields,
                 attachments=attachments.get(row["itemID"], []),
@@ -80,6 +86,7 @@ def _load_parent_items(connection: sqlite3.Connection) -> list[sqlite3.Row]:
         SELECT
             i.itemID,
             i.key,
+            i.libraryID,
             it.typeName,
             {field_columns}
         FROM items i
@@ -93,6 +100,14 @@ def _load_parent_items(connection: sqlite3.Connection) -> list[sqlite3.Row]:
         ORDER BY title COLLATE NOCASE
     """
     return list(connection.execute(query))
+
+
+def _load_groups(connection: sqlite3.Connection) -> dict[int, int]:
+    try:
+        rows = connection.execute("SELECT groupID, libraryID FROM groups")
+    except Exception:
+        return {}
+    return {row["libraryID"]: row["groupID"] for row in rows}
 
 
 def _load_creators(connection: sqlite3.Connection) -> dict[int, list[str]]:

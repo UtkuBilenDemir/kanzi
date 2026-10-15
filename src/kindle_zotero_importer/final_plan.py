@@ -71,6 +71,7 @@ def build_final_writer_plan(positioned_plan: dict[str, Any]) -> dict[str, Any]:
                 "attachment_key": attachment["key"],
                 "parent_item_id": item["zotero"]["parent_item_id"],
                 "parent_key": item["zotero"]["parent_key"],
+                "related_items": item["zotero"].get("related_items", []),
                 "citation_key": item["zotero"].get("citation_key"),
                 "doi": item["zotero"].get("doi"),
                 "isbn": item["zotero"].get("isbn"),

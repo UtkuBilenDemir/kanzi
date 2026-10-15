@@ -50,14 +50,34 @@
     table { width: 100%; border-collapse: collapse; background: var(--panel); table-layout: fixed; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
     th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); padding: 10px 12px; font-size: 12.5px; overflow-wrap: anywhere; user-select: text; position: relative; }
     th { background: var(--panel-soft); color: var(--muted); position: sticky; top: 0; font-weight: 600; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .06em; font-size: 10px; border-bottom: 1px solid var(--line); z-index: 1; }
-    th .resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; user-select: none; }
-    th .resizer:hover { background: var(--accent); opacity: 0.15; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: var(--text); background: #e9e9e9; }
+    th .sort-label { pointer-events: none; }
+    th .sort-arrow { pointer-events: none; color: var(--text); }
+    th .resizer { position: absolute; top: 0; right: -3px; width: 8px; height: 100%; cursor: col-resize; user-select: none; border-right: 2px solid transparent; }
+    th:hover .resizer { border-right-color: var(--line-strong); }
+    th .resizer:hover, th .resizer.dragging { border-right-color: var(--accent); background: rgba(17,17,17,.06); }
+    .expander { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; width: 24px; height: 24px; line-height: 1; font-size: 13px; color: var(--text); padding: 0; }
+    .expander:hover { background: var(--panel-soft); border-color: var(--line-strong); }
+    tr.detail-row td { background: var(--panel-soft); border-bottom: 1px solid var(--line-strong); padding: 0; }
+    .clip-list { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px 38px; }
+    .clip-item { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; font-size: 12px; box-shadow: var(--shadow); }
+    .clip-item .clip-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 10.5px; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+    .clip-item .clip-text { white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+    .clip-item .clip-problem { margin-top: 4px; color: var(--danger); font-size: 11px; }
+    .status-stack { display: flex; gap: 4px; flex-wrap: wrap; }
     th:nth-child(1), td:nth-child(1) { width: 10%; }
     th:nth-child(2), td:nth-child(2) { width: 9%; }
     th:nth-child(3), td:nth-child(3) { width: 6%; }
     th:nth-child(4), td:nth-child(4) { width: 24%; }
     th:nth-child(5), td:nth-child(5) { width: 21%; }
     th:nth-child(6), td:nth-child(6) { width: 30%; }
+    #tab-conflicts th:nth-child(1), #tab-conflicts td:nth-child(1) { width: 36px; }
+    #tab-conflicts th:nth-child(2), #tab-conflicts td:nth-child(2) { width: 13%; }
+    #tab-conflicts th:nth-child(3), #tab-conflicts td:nth-child(3) { width: 6%; }
+    #tab-conflicts th:nth-child(4), #tab-conflicts td:nth-child(4) { width: 24%; }
+    #tab-conflicts th:nth-child(5), #tab-conflicts td:nth-child(5) { width: 22%; }
+    #tab-conflicts th:nth-child(6), #tab-conflicts td:nth-child(6) { width: 30%; }
     #tab-integrated table { table-layout: fixed; }
     #tab-integrated th:nth-child(1), #tab-integrated td:nth-child(1) { width: 18%; }
     #tab-integrated th:nth-child(2), #tab-integrated td:nth-child(2) { width: 12%; }
@@ -65,6 +85,15 @@
     #tab-integrated th:nth-child(4), #tab-integrated td:nth-child(4) { width: 11%; }
     #tab-integrated th:nth-child(5), #tab-integrated td:nth-child(5) { width: 11%; }
     #tab-integrated th:nth-child(6), #tab-integrated td:nth-child(6) { width: 12%; }
+    .title-status-wrap { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+    #title-status-table { border: 0; box-shadow: none; }
+    #title-status-table th:nth-child(1), #title-status-table td:nth-child(1) { width: 13%; }
+    #title-status-table th:nth-child(2), #title-status-table td:nth-child(2) { width: 12%; }
+    #title-status-table th:nth-child(3), #title-status-table td:nth-child(3),
+    #title-status-table th:nth-child(4), #title-status-table td:nth-child(4),
+    #title-status-table th:nth-child(5), #title-status-table td:nth-child(5) { width: 8%; }
+    #title-status-table th:nth-child(6), #title-status-table td:nth-child(6) { width: 34%; }
+    #title-status-table th:nth-child(7), #title-status-table td:nth-child(7) { width: 17%; }
     .pill { display: inline-block; background: var(--accent); color: white; border-radius: var(--pill-radius); padding: 3px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--accent); }
     .row-actions button, .row-actions .row-btn { margin: 2px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); cursor: pointer; font-size: 12px; font-family: inherit; transition: all .12s; }
     .row-actions button:hover, .row-actions .row-btn:hover { border-color: var(--line-strong); background: var(--panel-soft); }
@@ -93,6 +122,27 @@
     .pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 10px 0; color: var(--muted); font-size: 11px; }
     .pagination button, .pagination select { width: auto; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); font: inherit; }
     .pagination button:disabled { color: var(--faint); background: var(--panel-soft); cursor: not-allowed; }
+    #pending-review { display: none; background: var(--panel); border: 2px solid var(--accent); border-radius: 14px; padding: 16px 18px; margin: 16px 0; box-shadow: var(--shadow-strong); }
+    #pending-review h2 { margin-top: 0; }
+    .pending-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+    .pending-toolbar button { width: auto; padding: 6px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; }
+    .pending-toolbar button:hover { background: var(--panel-soft); border-color: var(--line-strong); }
+    .pending-group { border: 1px solid var(--line); border-radius: var(--radius); margin: 8px 0; overflow: hidden; }
+    .pending-group-head { display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: var(--panel-soft); font-size: 12.5px; font-weight: 600; }
+    .pending-group-head input { width: auto; }
+    .pending-group-head .cite { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); font-weight: 400; }
+    .pending-items { display: flex; flex-direction: column; }
+    .pending-item { display: flex; gap: 8px; align-items: flex-start; padding: 7px 10px 7px 34px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.45; }
+    .pending-item input { width: auto; margin-top: 3px; flex-shrink: 0; }
+    .pending-item .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid #999; flex-shrink: 0; margin-top: 3px; }
+    .pending-item .pg { color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; flex-shrink: 0; }
+    .pending-item .txt { white-space: pre-wrap; word-break: break-word; }
+    .pending-footer { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+    #pending-integrate { width: auto; padding: 10px 18px; border: 1px solid var(--accent); background: var(--accent); color: white; cursor: pointer; font: inherit; font-weight: 700; border-radius: var(--radius); }
+    #pending-integrate:disabled { opacity: 0.4; cursor: not-allowed; }
+    #pending-integrate:not(:disabled):hover { background: #1a1a1a; }
+    #pending-cancel { width: auto; padding: 10px 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; border-radius: var(--radius); }
+    #pending-cancel:hover { background: var(--panel-soft); }
     ::selection { background: var(--accent); color: white; }
   </style>
   <script>
@@ -112,6 +162,14 @@
       conflictsPageSize: 50,
       mappingsPage: 0,
       mappingsPageSize: 50,
+      expandedTitles: {},
+      pendingPlan: null,
+      sortState: {
+        titles: { column: 'status', direction: 'asc' },
+        conflicts: { column: 'count', direction: 'desc' },
+        integrated: { column: 'title', direction: 'asc' },
+        mappings: { column: 'updated', direction: 'desc' },
+      },
 
       initSafe() {
         try {
@@ -157,6 +215,7 @@
         this.running = true;
         this.lastClippingsPath = path;
         this.startedAt = Date.now();
+        this.hidePendingReview();
         const btn = document.getElementById('run-button');
         if (btn) btn.classList.add('disabled');
         const fileEl = document.getElementById('run-file');
@@ -227,6 +286,7 @@
       async completeRun(summary, results, data) {
         this.running = false;
         clearInterval(this.timer);
+        this.hidePendingReview();
         this.updateProgress(100, 'Import complete', 'Annotations have been checked and saved in Zotero');
         const btn = document.getElementById('run-button');
         if (btn) {
@@ -254,8 +314,13 @@
           };
           grid.appendChild(makeCard(results.created, 'created'));
           grid.appendChild(makeCard(results.skippedExisting, 'already present'));
-          grid.appendChild(makeCard(results.updatedComments + results.updatedSortIndex, 'updated'));
-          grid.appendChild(makeCard(results.failed.length, 'failed'));
+           grid.appendChild(makeCard(results.updatedComments + results.updatedSortIndex, 'updated'));
+           grid.appendChild(makeCard(results.relationsAdded || 0, 'relations added'));
+           grid.appendChild(makeCard(results.commentLinksAdded || 0, 'comment links added'));
+           grid.appendChild(makeCard(results.failed.length, 'failed'));
+           if ((results.relationFailures || []).length) {
+             grid.appendChild(makeCard(results.relationFailures.length, 'relation failures'));
+           }
           resultsEl.appendChild(grid);
           const consentVersion = 2;
           let acceptedVersion = 0;
@@ -270,11 +335,12 @@
         this.data = data;
         this.rows = this.conflictRows();
         this.refreshRows();
+        this.refreshTitleOverview();
         this.refreshIntegrated();
         this.refreshMappings();
         const bar = document.getElementById('reimport-bar');
         if (bar) bar.style.display = 'none';
-        this.status(`${summary.counts.final_annotations || 0} positioned annotations processed; ${this.rows.length} review rows remain.`, results.failed.length > 0);
+        this.status(`${summary.counts.final_annotations || 0} positioned annotations processed; ${this.rows.length} review rows remain.`, results.failed.length > 0 || (results.relationFailures || []).length > 0);
         // Pseudonymous sharing after explicit consent.
         try {
           let share = false;
@@ -317,8 +383,218 @@
         clearInterval(this.timer);
         const btn = document.getElementById('run-button');
         if (btn) btn.classList.remove('disabled');
+        this.hidePendingReview();
         this.updateProgress(0, 'Import failed', message);
         this.status(message, true);
+      },
+
+      cancelRun(message) {
+        this.running = false;
+        clearInterval(this.timer);
+        const btn = document.getElementById('run-button');
+        if (btn) btn.classList.remove('disabled');
+        this.updateProgress(0, 'Ready', message || 'Cancelled.');
+        this.status(message || 'Cancelled.', false);
+      },
+
+      // Pure helper (tested): group pending delta annotations by title.
+      groupPendingAnnotations(annotations) {
+        const byKey = new Map();
+        for (const a of annotations || []) {
+          const key = a.citation_key || a.clipping_title || '(missing title)';
+          if (!byKey.has(key)) {
+            byKey.set(key, {
+              key, title: a.clipping_title || key,
+              citationKey: a.citation_key || '',
+              items: [],
+            });
+          }
+          byKey.get(key).items.push({
+            id: a.clipping_id,
+            text: a.annotation?.text || '',
+            page: a.annotation?.pageLabel || '',
+            color: a.annotation?.color || '#ffd400',
+          });
+        }
+        const groups = [...byKey.values()];
+        groups.sort((x, y) => y.items.length - x.items.length || x.title.localeCompare(y.title));
+        return groups;
+      },
+
+      showPendingReview(summary, finalPlan) {
+        this.pendingPlan = finalPlan;
+        const panel = document.getElementById('pending-review');
+        if (!panel) return;
+        panel.textContent = '';
+        panel.style.display = 'block';
+        const delta = finalPlan.annotations || [];
+        const deletions = finalPlan.deletions || [];
+        const groups = this.groupPendingAnnotations(delta);
+        const h2 = document.createElement('h2');
+        h2.textContent = `Review & integrate — ${delta.length} new highlight(s) across ${groups.length} title(s)`;
+        panel.appendChild(h2);
+        const desc = document.createElement('div');
+        desc.className = 'muted';
+        desc.textContent = 'Untick anything you do not want yet. Skipped highlights are offered again on the next run; nothing is recorded as done until you press Integrate.' + (deletions.length ? ` ${deletions.length} withdrawn highlight(s) will also be removed from Zotero.` : '');
+        panel.appendChild(desc);
+        const toolbar = document.createElement('div');
+        toolbar.className = 'pending-toolbar';
+        const mkBtn = (label, fn) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = label;
+          b.addEventListener('click', fn);
+          return b;
+        };
+        toolbar.appendChild(mkBtn('Select all', () => {
+          panel.querySelectorAll('input[data-clip-id], input[data-group-key]').forEach(cb => { cb.checked = true; cb.indeterminate = false; });
+          this.updatePendingCount();
+        }));
+        toolbar.appendChild(mkBtn('Select none', () => {
+          panel.querySelectorAll('input[data-clip-id], input[data-group-key]').forEach(cb => { cb.checked = false; cb.indeterminate = false; });
+          this.updatePendingCount();
+        }));
+        const count = document.createElement('span');
+        count.id = 'pending-count';
+        count.className = 'muted';
+        toolbar.appendChild(count);
+        panel.appendChild(toolbar);
+        const list = document.createElement('div');
+        list.id = 'pending-groups';
+        for (const g of groups) {
+          const box = document.createElement('div');
+          box.className = 'pending-group';
+          const head = document.createElement('label');
+          head.className = 'pending-group-head';
+          const gcb = document.createElement('input');
+          gcb.type = 'checkbox';
+          gcb.checked = true;
+          gcb.dataset.groupKey = g.key;
+          gcb.addEventListener('change', () => {
+            box.querySelectorAll('input[data-clip-id]').forEach(cb => { cb.checked = gcb.checked; });
+            gcb.indeterminate = false;
+            this.updatePendingCount();
+          });
+          head.appendChild(gcb);
+          const t = document.createElement('span');
+          t.textContent = `${g.title} (${g.items.length})`;
+          head.appendChild(t);
+          if (g.citationKey && g.citationKey !== g.title) {
+            const cite = document.createElement('span');
+            cite.className = 'cite';
+            cite.textContent = g.citationKey;
+            head.appendChild(cite);
+          }
+          box.appendChild(head);
+          const items = document.createElement('div');
+          items.className = 'pending-items';
+          for (const it of g.items) {
+            const row = document.createElement('label');
+            row.className = 'pending-item';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = true;
+            cb.dataset.clipId = it.id;
+            cb.addEventListener('change', () => {
+              const boxes = [...box.querySelectorAll('input[data-clip-id]')];
+              const checked = boxes.filter(b => b.checked).length;
+              gcb.checked = checked === boxes.length;
+              gcb.indeterminate = checked > 0 && checked < boxes.length;
+              this.updatePendingCount();
+            });
+            row.appendChild(cb);
+            const sw = document.createElement('span');
+            sw.className = 'swatch';
+            sw.style.background = it.color;
+            row.appendChild(sw);
+            if (it.page) {
+              const pg = document.createElement('span');
+              pg.className = 'pg';
+              pg.textContent = it.page;
+              row.appendChild(pg);
+            }
+            const txt = document.createElement('span');
+            txt.className = 'txt';
+            let snippet = it.text || '(no text)';
+            if (snippet.length > 220) snippet = snippet.slice(0, 220) + '…';
+            txt.textContent = snippet;
+            txt.title = it.text || '';
+            row.appendChild(txt);
+            items.appendChild(row);
+          }
+          box.appendChild(items);
+          list.appendChild(box);
+        }
+        panel.appendChild(list);
+        const footer = document.createElement('div');
+        footer.className = 'pending-footer';
+        const go = document.createElement('button');
+        go.id = 'pending-integrate';
+        go.textContent = `Integrate selected`;
+        go.addEventListener('click', () => this.integrateSelected());
+        footer.appendChild(go);
+        const cancel = document.createElement('button');
+        cancel.id = 'pending-cancel';
+        cancel.textContent = 'Cancel (nothing is written)';
+        cancel.addEventListener('click', () => this.cancelPendingReview());
+        footer.appendChild(cancel);
+        panel.appendChild(footer);
+        this.updatePendingCount();
+        panel.scrollIntoView({ block: 'nearest' });
+      },
+
+      hidePendingReview() {
+        this.pendingPlan = null;
+        const panel = document.getElementById('pending-review');
+        if (panel) {
+          panel.style.display = 'none';
+          panel.textContent = '';
+        }
+      },
+
+      updatePendingCount() {
+        const panel = document.getElementById('pending-review');
+        if (!panel) return;
+        const n = panel.querySelectorAll('input[data-clip-id]:checked').length;
+        const total = panel.querySelectorAll('input[data-clip-id]').length;
+        const count = document.getElementById('pending-count');
+        if (count) count.textContent = `${n} of ${total} selected`;
+        const go = document.getElementById('pending-integrate');
+        if (go) {
+          const deletions = (this.pendingPlan?.deletions || []).length;
+          go.disabled = n === 0 && deletions === 0;
+          go.textContent = deletions
+            ? `Integrate selected (${n}) + ${deletions} deletion(s)`
+            : `Integrate selected (${n})`;
+        }
+      },
+
+      getSelectedClippingIds() {
+        const panel = document.getElementById('pending-review');
+        if (!panel) return [];
+        return [...panel.querySelectorAll('input[data-clip-id]:checked')].map(cb => cb.dataset.clipId);
+      },
+
+      async integrateSelected() {
+        const ids = this.getSelectedClippingIds();
+        if (!ids.length && !(this.pendingPlan?.deletions || []).length) return;
+        const go = document.getElementById('pending-integrate');
+        const cancel = document.getElementById('pending-cancel');
+        if (go) go.disabled = true;
+        if (cancel) cancel.disabled = true;
+        try {
+          await this.plugin.integratePending(this, ids);
+        } catch (e) {
+          this.failRun(String(e && e.stack ? e.stack : e));
+        }
+      },
+
+      async cancelPendingReview() {
+        try {
+          await this.plugin.cancelPendingReview(this);
+        } catch (e) {
+          this.cancelRun(String(e && e.message ? e.message : e));
+        }
       },
 
       getFullReimport() {
@@ -357,7 +633,7 @@
         const info = document.getElementById('reimport-info');
         if (bar) {
           bar.style.display = 'block';
-          if (info) info.textContent = `Saved override for “${title}” (${count} highlight(s)). Click Re-import to integrate pending annotations for this article.`;
+          if (info) info.textContent = `Saved override for “${title}” (${count} source clipping(s)). Click Re-import to process every annotation under this exact title.`;
         }
         this.updateInfobox();
       },
@@ -367,7 +643,7 @@
         const isFull = this.getFullReimport();
         const mode = isFull ? "FULL re-import from scratch (all highlights)" : "incremental (only new/changed/removed)";
         if (this.lastClippingsPath) {
-          if (!confirm(`Re-import with saved overrides using last file?\n\n${this.lastClippingsPath}\n\nMode: ${mode}\nThis will re-run matching, positioning, and Zotero writing.`)) return;
+          if (!confirm(`Re-import with saved overrides using last file?\n\n${this.lastClippingsPath}\n\nMode: ${mode}\nThis will re-run matching and positioning. You will review the pending highlights and press Integrate before anything is written to Zotero.`)) return;
           await this.plugin.runManagedImportWithPath(this, this.lastClippingsPath, isFull);
         } else {
           await this.chooseAndImport();
@@ -401,22 +677,156 @@
           .join('') || '<div class="card">No data</div>';
       },
 
+      discardedIds() {
+        return new Set(this.data.finalPlan?.discarded_clipping_ids || []);
+      },
+
+      sourceTitleStats() {
+        const byTitle = new Map();
+        const discarded = this.discardedIds();
+        for (const clipping of this.data.clippings?.clippings || []) {
+          if (clipping.id && discarded.has(clipping.id)) continue;
+          const title = clipping.title || '(missing title)';
+          if (!byTitle.has(title)) {
+            byTitle.set(title, {
+              title, count: 0, highlights: 0, notes: 0, bookmarks: 0,
+              clippings: [],
+            });
+          }
+          const entry = byTitle.get(title);
+          entry.count += 1;
+          entry.clippings.push(clipping);
+          if (clipping.kind === 'highlight') entry.highlights += 1;
+          else if (clipping.kind === 'note') entry.notes += 1;
+          else if (clipping.kind === 'bookmark') entry.bookmarks += 1;
+        }
+        return byTitle;
+      },
+
       conflictRows() {
-        const rows = [];
+        // One row per unique Kindle title. Per-clipping attachment/position
+        // failures are grouped under their title and shown via chevron.
+        const sourceByTitle = this.sourceTitleStats();
+        const byTitle = new Map();
+        const ensure = (title) => {
+          const key = title || '(missing title)';
+          if (!byTitle.has(key)) {
+            const source = sourceByTitle.get(key);
+            byTitle.set(key, {
+              title: key, count: source?.count || 0, status: 'review',
+              highlights: source?.highlights || 0,
+              notes: source?.notes || 0,
+              bookmarks: source?.bookmarks || 0,
+              statuses: new Set(), sources: new Set(),
+              candidates: [],
+              clippings: (source?.clippings || []).map(clipping => ({
+                id: clipping.id,
+                text: clipping.text || '', kind: clipping.kind || '',
+                page: clipping.page || '', location: clipping.location || '',
+                added_on: clipping.added_on || clipping.added_on_iso || '',
+                status: '', problems: [],
+              })),
+              positionProblems: new Set(),
+            });
+          }
+          return byTitle.get(key);
+        };
+        const mergeCandidates = (entry, list) => {
+          const seen = new Set(entry.candidates.map(c => (c.citation_key || c.key || String(c.item_id))));
+          for (const c of list || []) {
+            const k = (c.citation_key || c.key || String(c.item_id));
+            if (!k || seen.has(k)) continue;
+            seen.add(k);
+            entry.candidates.push(c);
+          }
+          entry.candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
+        };
         for (const match of this.data.matches?.matches || []) {
           if (['matched', 'ignored'].includes(match.status)) continue;
-          rows.push({ source: 'Title match', title: match.clipping_title, status: match.status, count: match.clipping_count, candidates: match.candidates || [] });
+          const e = ensure(match.clipping_title);
+          e.statuses.add(match.status);
+          e.sources.add('Title match');
+          if (!sourceByTitle.has(match.clipping_title)) e.count = Math.max(e.count, match.clipping_count || 0);
+          mergeCandidates(e, match.candidates);
+          if (!e.matchStatus) e.matchStatus = match.status;
         }
         for (const override of this.data.generatedOverrides?.overrides || []) {
           const s = override.review?.status || 'review';
-          if (['matched','ignored'].includes(s)) continue;
-          rows.push({ source: 'Override suggestion', title: override.clipping_title, status: s, count: override.review?.clipping_count || '', candidates: override.candidates || [], generated: override });
+          if (['matched', 'ignored'].includes(s)) continue;
+          const e = ensure(override.clipping_title);
+          e.statuses.add(s);
+          e.sources.add('Override suggestion');
+          if (!sourceByTitle.has(override.clipping_title)) e.count = Math.max(e.count, override.review?.clipping_count || e.count);
+          mergeCandidates(e, override.candidates);
+          if (!e.matchStatus) e.matchStatus = s;
         }
+        const discarded = this.discardedIds();
         for (const item of this.data.positionedPlan?.items || []) {
           if (['positioned', 'ignored-title'].includes(item.status)) continue;
-          rows.push({ source: 'Attachment/position', title: item.clipping?.title || '(missing title)', status: item.status || 'unknown', count: 1, detail: (item.problems || []).join('; ') || 'Needs review', candidates: [] });
+          if (item.clipping?.id && discarded.has(item.clipping.id)) continue;
+          const title = item.clipping?.title || '(missing title)';
+          const e = ensure(title);
+          e.statuses.add(item.status);
+          e.sources.add('Attachment/position');
+          const c = item.clipping || {};
+          const clipping = e.clippings.find(entry => entry.id === c.id);
+          const details = {
+            id: c.id,
+            text: c.text || '', kind: c.kind || '',
+            page: c.page || '', location: c.location || '',
+            added_on: c.added_on || c.added_on_iso || '',
+            status: item.status || 'unknown', problems: item.problems || [],
+            pageHint: item.page_hint || null,
+          };
+          if (clipping) Object.assign(clipping, details);
+          else e.clippings.push(details);
+          for (const p of item.problems || []) e.positionProblems.add(p);
         }
+        const rank = (s) => {
+          const order = { ambiguous: 0, unmatched: 1, 'unmatched-title': 1, 'matched-title-no-attachment': 2, 'matched-title-ambiguous-attachment': 2, review: 3 };
+          return order[s] ?? 4;
+        };
+        const rows = [];
+        const matchByTitle = new Map((this.data.matches?.matches || []).map(m => [m.clipping_title, m]));
+        const overrideByTitle = new Map((this.data.persistentOverrides?.overrides || []).map(o => [o.clipping_title, o]));
+        for (const e of byTitle.values()) {
+          // clippings.json is authoritative when available; older runtimes
+          // without it fall back to conflict/position row counts.
+          const source = sourceByTitle.get(e.title);
+          if (source) e.count = source.count;
+          else if (!e.count && e.clippings.length) e.count = e.clippings.length;
+          if (!e.count) e.count = e.clippings.length || 1;
+          const statuses = [...e.statuses];
+          statuses.sort((a, b) => rank(a) - rank(b));
+          e.status = statuses[0] || 'review';
+          e.statuses = statuses;
+          e.sources = [...e.sources];
+          e.detail = [...e.positionProblems].join('; ');
+          // Already-mapped target for position-failure rows (matched titles
+          // are skipped above, so candidates stay empty and look unmatched).
+          const match = matchByTitle.get(e.title);
+          const override = overrideByTitle.get(e.title);
+          const res = override?.resolution || {};
+          e.mappedTarget = res.ignore ? 'Ignored'
+            : res.citation_key || res.zotero_key || res.zotero_item_id
+            || match?.candidates?.[0]?.citation_key || match?.candidates?.[0]?.key || '';
+          e.matchStatusFull = match?.status || '';
+          rows.push(e);
+        }
+        rows.sort((a, b) => (b.count - a.count) || a.title.localeCompare(b.title));
         return rows;
+      },
+
+      conflictAffected(row) {
+        const total = row.count || (row.clippings || []).length || 0;
+        const positionFailed = (row.clippings || []).filter(c =>
+          (c.problems && c.problems.length) || (c.status && c.status !== '' && c.status !== 'positioned')
+        ).length;
+        const hasTitleLevel = (row.statuses || [row.status]).some(s =>
+          ['ambiguous', 'unmatched', 'unmatched-title', 'review', 'matched-title-no-attachment', 'matched-title-ambiguous-attachment'].includes(s)
+        );
+        const failed = positionFailed > 0 ? positionFailed : (hasTitleLevel ? total : positionFailed);
+        return { failed, total };
       },
 
       async saveCandidate(index) {
@@ -436,13 +846,13 @@
           resolution,
           review: { status: row.status, clipping_count: row.count || 0 },
         });
-        this.status(`Saved override for ${row.title} → ${candidate.citation_key || candidate.key}. Click Re-import to integrate ${row.count} pending highlight(s).`, false);
+        this.status(`Saved override for ${row.title} → ${candidate.citation_key || candidate.key}. Click Re-import to process all ${row.count} source clipping(s) for this title.`, false);
         this.showReimportReady(row.title, row.count);
         this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
         this.refreshMappings();
+        this.refreshTitleOverview();
         // Immediately hide mapped titles from Conflicts view
-        const mappedTitles = new Set([row.title, ...otherRows.map(r=>r.title)]);
-        this.rows = this.rows.filter(r => !mappedTitles.has(r.title));
+        this.rows = this.rows.filter(r => r.title !== row.title);
         this.refreshRows();
       },
 
@@ -480,11 +890,12 @@
           this.status(`Saved override for ${row.title} + ${otherRows.length} similar titles → ${targetKey}. Click Re-import to integrate.`, false);
           this.showReimportReady(`${row.title} + ${otherRows.length} others`, row.count + otherRows.reduce((s,r)=>s+(r.count||0),0));
         } else {
-          this.status(`Saved override for ${row.title} → ${targetKey}. Click Re-import to integrate ${row.count} pending highlight(s).`, false);
+          this.status(`Saved override for ${row.title} → ${targetKey}. Click Re-import to process all ${row.count} source clipping(s) for this title.`, false);
           this.showReimportReady(row.title, row.count);
         }
         this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
         this.refreshMappings();
+        this.refreshTitleOverview();
         // Immediately hide mapped titles from Conflicts view
         const mappedSet = new Set(appliedTitles);
         this.rows = this.rows.filter(r => !mappedSet.has(r.title));
@@ -496,66 +907,98 @@
         table.dataset.resizable = "1";
         const ths = table.querySelectorAll('th');
         ths.forEach(th => {
+          if (th.querySelector(':scope > .resizer')) return;
           const resizer = document.createElement('div');
           resizer.className = 'resizer';
+          resizer.title = 'Drag to resize column';
           th.appendChild(resizer);
           let startX, startWidth;
           const onMouseMove = (e) => {
             const dx = e.clientX - startX;
-            th.style.width = (startWidth + dx) + 'px';
+            th.style.width = Math.max(40, startWidth + dx) + 'px';
+            table.style.tableLayout = 'fixed';
           };
           const onMouseUp = () => {
+            resizer.classList.remove('dragging');
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
           };
           resizer.addEventListener('mousedown', (e) => {
             startX = e.clientX;
             startWidth = th.offsetWidth;
+            resizer.classList.add('dragging');
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
             e.preventDefault();
+            e.stopPropagation();
           });
         });
       },
 
-      makeTableSortable(table) {
+      makeTableSortable(table, opts = {}) {
         if (!table || table.dataset.sortable) return;
         table.dataset.sortable = "1";
-        const ths = table.querySelectorAll('th');
-        let sortCol = -1;
-        let sortAsc = true;
+        const skipCols = new Set(opts.skipColumns || []);
+        const columns = opts.columns || [];
+        const descendingColumns = new Set(opts.descendingColumns || []);
+        const ths = Array.from(table.querySelectorAll('thead th'));
+        // Wrap header labels so sort arrows never wipe the resizer node.
+        ths.forEach(th => {
+          if (!th.querySelector(':scope > .sort-label')) {
+            const label = document.createElement('span');
+            label.className = 'sort-label';
+            while (th.firstChild && !th.firstChild.classList?.contains('resizer')) {
+              label.appendChild(th.firstChild);
+            }
+            th.insertBefore(label, th.firstChild);
+            const arrow = document.createElement('span');
+            arrow.className = 'sort-arrow';
+            th.insertBefore(arrow, th.querySelector('.resizer'));
+          }
+        });
         ths.forEach((th, idx) => {
-          th.style.cursor = 'pointer';
+          const column = columns[idx];
+          if (skipCols.has(idx) || !column) return;
+          th.classList.add('sortable');
           th.title = 'Click to sort';
           th.addEventListener('click', (e) => {
             if (e.target.classList.contains('resizer')) return;
-            const tbody = table.querySelector('tbody');
-            if (!tbody) return;
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            // Ignore placeholder rows with colspan
-            if (rows.length && rows[0].querySelector('td[colspan]')) return;
-            if (sortCol === idx) sortAsc = !sortAsc;
-            else { sortCol = idx; sortAsc = true; }
-            ths.forEach(h => h.textContent = h.textContent.replace(/ [▲▼]$/, ''));
-            th.textContent = th.textContent + (sortAsc ? ' ▲' : ' ▼');
-            rows.sort((a,b) => {
-              const getText = (row, col) => (row.children[col]?.textContent || '').toLowerCase().trim();
-              const va = getText(a, idx);
-              const vb = getText(b, idx);
-              // Try numeric compare if both look numeric
-              const na = parseFloat(va);
-              const nb = parseFloat(vb);
-              if (!isNaN(na) && !isNaN(nb) && va !== '' && vb !== '') {
-                if (na < nb) return sortAsc ? -1 : 1;
-                if (na > nb) return sortAsc ? 1 : -1;
-              }
-              if (va < vb) return sortAsc ? -1 : 1;
-              if (va > vb) return sortAsc ? 1 : -1;
-              return 0;
-            });
-            rows.forEach(r => tbody.appendChild(r));
+            if (e.target.classList.contains('expander')) return;
+            const current = this.sortState[opts.tableKey] || {};
+            const direction = current.column === column
+              ? (current.direction === 'asc' ? 'desc' : 'asc')
+              : (descendingColumns.has(column) ? 'desc' : 'asc');
+            this.sortState[opts.tableKey] = { column, direction };
+            this.updateSortIndicators(table, opts.tableKey, columns);
+            if (opts.refresh) opts.refresh();
           });
         });
+        this.updateSortIndicators(table, opts.tableKey, columns);
+      },
+
+      updateSortIndicators(table, tableKey, columns) {
+        const state = this.sortState[tableKey] || {};
+        Array.from(table.querySelectorAll('thead th')).forEach((th, idx) => {
+          const arrow = th.querySelector(':scope > .sort-arrow');
+          if (arrow) arrow.textContent = columns[idx] === state.column
+            ? (state.direction === 'asc' ? ' ▲' : ' ▼')
+            : '';
+        });
+      },
+
+      sortRows(items, tableKey, selectors) {
+        const state = this.sortState[tableKey] || {};
+        const select = selectors[state.column];
+        if (!select) return items.slice();
+        const direction = state.direction === 'desc' ? -1 : 1;
+        return items.map((item, index) => ({ item, index })).sort((a, b) => {
+          const left = select(a.item);
+          const right = select(b.item);
+          let result = 0;
+          if (typeof left === 'number' && typeof right === 'number') result = left - right;
+          else result = String(left ?? '').localeCompare(String(right ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+          return result ? result * direction : a.index - b.index;
+        }).map(entry => entry.item);
       },
 
       async saveManualCandidate(index) {
@@ -597,12 +1040,13 @@
           const mappedTitles = new Set([row.title, ...otherRows.map(r=>r.title)]);
           this.rows = this.rows.filter(r => !mappedTitles.has(r.title));
         } else {
-          this.status(`Saved custom override for ${row.title} → ${raw}. Click Re-import to integrate ${row.count} pending highlight(s).`, false);
+          this.status(`Saved custom override for ${row.title} → ${raw}. Click Re-import to process all ${row.count} source clipping(s) for this title.`, false);
           this.showReimportReady(row.title, row.count);
           this.rows = this.rows.filter(r => r.title !== row.title);
         }
         this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
         this.refreshMappings();
+        this.refreshTitleOverview();
         this.refreshRows();
         input.value = '';
       },
@@ -620,6 +1064,7 @@
         this.showReimportReady(row.title, row.count);
         this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
         this.refreshMappings();
+        this.refreshTitleOverview();
       },
 
       status(message, error) {
@@ -695,7 +1140,121 @@
 
       getIntegratedHighlights() {
         const anns = this.data.finalPlan?.all_annotations || this.data.finalPlan?.annotations || [];
-        return anns.slice().sort((a,b) => (a.clipping_title || '').localeCompare(b.clipping_title || '') || (a.annotation?.text || '').localeCompare(b.annotation?.text || ''));
+        return anns.slice();
+      },
+
+      titleOverviewRows() {
+        const sources = this.sourceTitleStats();
+        const matches = new Map((this.data.matches?.matches || []).map(match => [match.clipping_title, match]));
+        const overrides = new Map((this.data.persistentOverrides?.overrides || []).map(entry => [entry.clipping_title, entry]));
+        const positioned = new Map();
+        const discardedSet = new Set(this.data.finalPlan?.discarded_clipping_ids || []);
+        for (const item of this.data.positionedPlan?.items || []) {
+          if (item.clipping?.id && discardedSet.has(item.clipping.id)) continue;
+          const title = item.clipping?.title || '(missing title)';
+          if (!positioned.has(title)) positioned.set(title, { positioned: 0, unresolved: 0 });
+          const counts = positioned.get(title);
+          if (item.status === 'positioned') counts.positioned += 1;
+          else if (item.status !== 'ignored-title') counts.unresolved += 1;
+        }
+        const integrated = new Map();
+        for (const annotation of this.getIntegratedHighlights()) {
+          const title = annotation.clipping_title || '(missing title)';
+          integrated.set(title, (integrated.get(title) || 0) + 1);
+        }
+        const deferred = new Set(this.data.finalPlan?.deferred_clipping_ids || []);
+        const pendingByTitle = new Map();
+        const clippingIdToTitle = new Map();
+        for (const source of sources.values()) {
+          for (const clipping of source.clippings || []) {
+            if (clipping.id) clippingIdToTitle.set(clipping.id, source.title);
+          }
+        }
+        for (const item of this.data.positionedPlan?.items || []) {
+          const clipping = item.clipping || {};
+          if (clipping.id && deferred.has(clipping.id)) {
+            const title = clipping.title || clippingIdToTitle.get(clipping.id) || '(missing title)';
+            pendingByTitle.set(title, (pendingByTitle.get(title) || 0) + 1);
+            deferred.delete(clipping.id);
+          }
+        }
+        for (const id of deferred) {
+          const title = clippingIdToTitle.get(id) || '(missing title)';
+          pendingByTitle.set(title, (pendingByTitle.get(title) || 0) + 1);
+        }
+        const rows = [];
+        for (const source of sources.values()) {
+          const match = matches.get(source.title);
+          const override = overrides.get(source.title);
+          const resolution = override?.resolution || {};
+          const position = positioned.get(source.title) || { positioned: 0, unresolved: 0 };
+          const integratedCount = integrated.get(source.title) || 0;
+          const pending = pendingByTitle.get(source.title) || 0;
+          let target = '';
+          if (resolution.ignore) target = 'Ignored';
+          else target = resolution.citation_key || resolution.zotero_key || resolution.zotero_item_id ||
+            match?.candidates?.[0]?.citation_key || match?.candidates?.[0]?.key || '';
+          let status = 'unmatched';
+          if (resolution.ignore || match?.status === 'ignored') status = 'ignored';
+          else if (override && match?.status !== 'matched') status = 'mapping saved';
+          else if (pending) status = 'pending review';
+          else if (position.unresolved) status = 'position issues';
+          else if (integratedCount) status = 'integrated';
+          else if (match?.status === 'matched') status = 'matched';
+          else if (match?.status) status = match.status;
+          rows.push({
+            ...source,
+            status,
+            target: String(target || '—'),
+            integrated: integratedCount,
+            pending,
+            unresolved: position.unresolved,
+          });
+        }
+        return rows;
+      },
+
+      refreshTitleOverview() {
+        const tbody = document.getElementById('title-status-rows');
+        const count = document.getElementById('title-status-count');
+        if (!tbody) return;
+        tbody.textContent = '';
+        const rows = this.sortRows(this.titleOverviewRows(), 'titles', {
+          status: row => row.status,
+          source: row => row.count,
+          integrated: row => row.integrated,
+          pending: row => row.pending,
+          problems: row => row.unresolved,
+          title: row => row.title,
+          target: row => row.target,
+        });
+        if (count) count.textContent = `${rows.length} Kindle titles from the current clippings file`;
+        for (const row of rows) {
+          const tr = document.createElement('tr');
+          const values = [
+            row.status,
+            `${row.count} (${row.highlights}H · ${row.notes}N · ${row.bookmarks}B)`,
+            row.integrated,
+            row.pending,
+            row.unresolved,
+            row.title,
+            row.target,
+          ];
+          values.forEach((value, index) => {
+            const td = document.createElement('td');
+            if (index === 0) {
+              const pill = document.createElement('span');
+              pill.className = 'pill';
+              pill.textContent = String(value);
+              td.appendChild(pill);
+            } else {
+              td.textContent = String(value);
+            }
+            if (index === 1) td.title = `${row.highlights} highlights, ${row.notes} notes, ${row.bookmarks} bookmarks`;
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        }
       },
 
       buildClippingDateMap() {
@@ -717,8 +1276,16 @@
         const all = this.getIntegratedHighlights();
         const dateMap = this.buildClippingDateMap();
         const filtered = needle ? all.filter(a => `${a.clipping_title} ${a.annotation?.text || ''} ${a.citation_key || ''} ${a.annotation?.pageLabel || ''} ${a.clipping_added_on_iso || ''} ${a.integrated_at || ''}`.toLowerCase().includes(needle)) : all;
+        const sorted = this.sortRows(filtered, 'integrated', {
+          title: annotation => annotation.clipping_title || '',
+          citation: annotation => annotation.citation_key || annotation.parent_key || '',
+          text: annotation => annotation.annotation?.text || '',
+          added: annotation => annotation.clipping_added_on_iso || dateMap.get(annotation.clipping_id)?.added_on_iso || '',
+          integrated: annotation => annotation.integrated_at || '',
+          page: annotation => annotation.annotation?.pageLabel || '',
+        });
         if (resetPage) this.integratedPage = 0;
-        const page = this.paginate(filtered, 'integratedPage', 'integratedPageSize');
+        const page = this.paginate(sorted, 'integratedPage', 'integratedPageSize');
         const totalPages = page.totalPages;
         const toShow = page.rows;
         if (countEl) countEl.textContent = `${filtered.length} of ${all.length} — page ${this.integratedPage + 1}/${totalPages} (${this.integratedPageSize} per page)`;
@@ -783,9 +1350,17 @@
         tbody.textContent = '';
         const needle = (document.getElementById('mappings-search')?.value || '').toLowerCase();
         const overrides = this.data.persistentOverrides?.overrides || [];
+        const sourceCounts = this.sourceTitleStats();
         const filtered = needle ? overrides.filter(o => `${o.clipping_title} ${o.resolution?.citation_key || ''} ${o.resolution?.zotero_key || ''} ${o.resolution?.ignore ? 'ignored' : ''}`.toLowerCase().includes(needle)) : overrides;
+        const sorted = this.sortRows(filtered, 'mappings', {
+          title: entry => entry.clipping_title || '',
+          resolution: entry => entry.resolution?.citation_key || entry.resolution?.zotero_key || entry.resolution?.zotero_item_id || (entry.resolution?.ignore ? 'ignored' : ''),
+          status: entry => entry.review?.status || '',
+          count: entry => sourceCounts.get(entry.clipping_title)?.count ?? entry.review?.clipping_count ?? 0,
+          updated: entry => entry.updated_at || entry.created_at || '',
+        });
         if (resetPage) this.mappingsPage = 0;
-        const page = this.paginate(filtered, 'mappingsPage', 'mappingsPageSize');
+        const page = this.paginate(sorted, 'mappingsPage', 'mappingsPageSize');
         if (countEl) countEl.textContent = `${filtered.length} of ${overrides.length} mappings — page ${this.mappingsPage + 1}/${page.totalPages}`;
         this.refreshPagination('mappings-pagination', 'mappingsPage', 'mappingsPageSize', page.totalPages, () => this.refreshMappings());
         if (!filtered.length) {
@@ -826,7 +1401,7 @@
           tdStatus.style.fontSize = '11px';
           tr.appendChild(tdStatus);
           const tdCount = document.createElement('td');
-          tdCount.textContent = String(entry.review?.clipping_count ?? '—');
+          tdCount.textContent = String(sourceCounts.get(entry.clipping_title)?.count ?? entry.review?.clipping_count ?? '—');
           tr.appendChild(tdCount);
           const tdDate = document.createElement('td');
           const dateVal = entry.updated_at || entry.created_at || '';
@@ -861,9 +1436,37 @@
           this.status(`Deleted override for ${title}. Re-import to restore it as a conflict.`, false);
           this.data.persistentOverrides = await this.plugin.readJsonArtifact("match-overrides.json");
           this.refreshMappings();
+          this.refreshTitleOverview();
           this.showReimportReady(title, 0);
         } catch (e) {
           this.status(String(e), true);
+        }
+      },
+
+      async copyClipText(clip) {
+        const text = clip.text || '';
+        if (!text) return this.status('Nothing to copy — this clipping has no text.', true);
+        try {
+          if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+          else throw new Error('clipboard unavailable');
+          this.status('Clipping text copied — paste it into a Zotero annotation manually. Kanzi will not touch manual annotations.', false);
+        } catch (e) {
+          this.status(`Copy failed — select the text manually: ${e}`, true);
+        }
+      },
+
+      async discardClip(clippingId, title) {
+        if (!clippingId) return;
+        if (!confirm(`Permanently discard this clipping?\n\nIt will never be retried or shown again.\n${title || ''}`)) return;
+        try {
+          await this.plugin.discardClip(clippingId);
+          this.data.finalPlan = await this.plugin.readJsonArtifact("import-plan.final.json");
+          this.rows = this.conflictRows();
+          this.refreshRows();
+          this.refreshTitleOverview();
+          this.status('Clipping discarded — it will not return on future runs.', false);
+        } catch (e) {
+          this.status(String(e && e.message ? e.message : e), true);
         }
       },
 
@@ -1038,6 +1641,10 @@
         panel.appendChild(retryRow);
         root.appendChild(panel);
 
+        const pendingDiv = document.createElement('div');
+        pendingDiv.id = 'pending-review';
+        root.appendChild(pendingDiv);
+
         const resultsDiv = document.createElement('div');
         resultsDiv.id = 'run-results';
         root.appendChild(resultsDiv);
@@ -1070,11 +1677,35 @@
               <div class="card"><strong>${this.esc(this.data.summary?.counts?.clippings || '-')}</strong><span>clippings</span></div>
               <div class="card"><strong>${this.esc(this.data.summary?.counts?.unique_titles || '-')}</strong><span>unique titles</span></div>
               <div class="card"><strong>${this.esc(finalCount)}</strong><span>final annotations</span></div>
-              <div class="card"><strong>${this.esc(this.rows.length)}</strong><span>conflict rows</span></div>
+              <div class="card"><strong>${this.esc(this.rows.length)}</strong><span>conflict titles</span></div>
             </div>
             <h2>Match Statuses</h2><div class="grid">${this.cards(matchCounts)}</div>
-            <h2>Plan Statuses</h2><div class="grid">${this.cards(planCounts)}</div>
-            <div class="notice">Unresolved title and positioning cases remain available under Conflicts. They do not prevent positioned annotations from importing. Check Integrated for highlights that were included.</div>`;
+             <h2>Plan Statuses</h2><div class="grid">${this.cards(planCounts)}</div>
+             <div class="notice">Unresolved title and positioning cases remain available under Conflicts. They do not prevent positioned annotations from importing. Check Integrated for highlights that were included.</div>`;
+        const titleH2 = document.createElement('h2');
+        titleH2.textContent = 'Status by Kindle Title';
+        summaryTab.appendChild(titleH2);
+        const titleDesc = document.createElement('div');
+        titleDesc.className = 'muted';
+        titleDesc.textContent = 'Source counts come directly from clippings.json. H = highlights, N = notes, B = bookmarks. Problems are annotations that could not be positioned.';
+        summaryTab.appendChild(titleDesc);
+        const titleCount = document.createElement('div');
+        titleCount.id = 'title-status-count';
+        titleCount.className = 'muted';
+        titleCount.style.margin = '6px 0';
+        summaryTab.appendChild(titleCount);
+        const titleWrap = document.createElement('div');
+        titleWrap.className = 'title-status-wrap';
+        const titleTable = document.createElement('table');
+        titleTable.id = 'title-status-table';
+        const titleThead = document.createElement('thead');
+        titleThead.innerHTML = '<tr><th>Status</th><th>Source</th><th>Integrated</th><th>Pending</th><th>Problems</th><th>Kindle Title</th><th>Target</th></tr>';
+        titleTable.appendChild(titleThead);
+        const titleTbody = document.createElement('tbody');
+        titleTbody.id = 'title-status-rows';
+        titleTable.appendChild(titleTbody);
+        titleWrap.appendChild(titleTable);
+        summaryTab.appendChild(titleWrap);
         root.appendChild(summaryTab);
 
         const integratedTab = document.createElement('div');
@@ -1126,7 +1757,7 @@
         conflictsTab.appendChild(cH2);
         const cDesc = document.createElement('div');
         cDesc.className='muted';
-        cDesc.textContent='Pick a suggested candidate or enter any citation key / Zotero key / item ID manually. Each candidate row has a dedicated Use button. “Use Custom” saves your manual entry. After saving, use Re-import to integrate pending highlights.';
+        cDesc.textContent='One row per unique Kindle title. Click ▸ to expand its highlights/notes and positioning problems. Pick a suggested candidate or enter any citation key / Zotero key / item ID manually. After saving, use Re-import to integrate pending highlights.';
         conflictsTab.appendChild(cDesc);
         const reimportBar = document.createElement('div');
         reimportBar.id = 'reimport-bar';
@@ -1167,9 +1798,15 @@
         search.addEventListener('input', () => this.refreshRows(true));
         searchWrap.appendChild(search);
         conflictsTab.appendChild(searchWrap);
+        const cCount = document.createElement('div');
+        cCount.id = 'conflicts-count';
+        cCount.className = 'muted';
+        cCount.style.margin = '6px 0';
+        conflictsTab.appendChild(cCount);
         const table = document.createElement('table');
+        table.id = 'conflicts-table';
         const thead = document.createElement('thead');
-        thead.innerHTML = '<tr><th>Source</th><th>Status</th><th>Count</th><th>Kindle Title</th><th>Candidates / Detail</th><th>Action</th></tr>';
+        thead.innerHTML = '<tr><th></th><th>Status</th><th>Count</th><th>Kindle Title</th><th>Candidates / Detail</th><th>Action</th></tr>';
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
         tbody.id = 'rows';
@@ -1237,9 +1874,19 @@
           inp.id = id;
           inp.value = value || '';
           sForm.appendChild(inp);
+          return inp;
         };
         makeSettingField('Project directory', 'setting-projectDir', this.settings.projectDir);
         makeSettingField('Python executable', 'setting-pythonPath', this.settings.pythonPath);
+        const pythonHelp = document.createElement('div');
+        pythonHelp.className = 'notice';
+        pythonHelp.style.margin = '8px 0 12px';
+        pythonHelp.style.whiteSpace = 'pre-wrap';
+        pythonHelp.style.userSelect = 'text';
+        pythonHelp.textContent = this.plugin.isWindows()
+          ? 'Windows setup (PowerShell):\nwinget install --id Python.Python.3.13 --exact\nwinget install --id oschwartz10612.Poppler --exact\nwinget install --id QPDF.QPDF --exact   # optional, for protected PDFs\n\nFully quit and reopen Zotero after installation. Kanzi detects Python automatically; only edit the executable path to override detection.'
+          : 'Kanzi detects standard Python 3.11+ installations automatically. Only edit this path to override detection.';
+        sForm.appendChild(pythonHelp);
         makeSettingField('Zotero DB', 'setting-zoteroDbPath', this.settings.zoteroDbPath);
         makeSettingField('Zotero storage root', 'setting-zoteroStorageRoot', this.settings.zoteroStorageRoot);
         const shareRow = document.createElement('div');
@@ -1587,12 +2234,45 @@
         root.appendChild(statusDiv);
 
         this.refreshRows();
+        this.refreshTitleOverview();
         this.refreshIntegrated();
         this.refreshMappings();
         this.updateInfobox();
+        this.makeTableResizable(document.querySelector('#title-status-table'));
         this.makeTableResizable(document.querySelector('#tab-conflicts table'));
         this.makeTableResizable(document.querySelector('#tab-integrated table'));
         this.makeTableResizable(document.querySelector('#tab-mappings table'));
+        this.makeTableSortable(document.querySelector('#title-status-table'), {
+          tableKey: 'titles',
+          columns: ['status', 'source', 'integrated', 'pending', 'problems', 'title', 'target'],
+          descendingColumns: ['source', 'integrated', 'pending', 'problems'],
+          refresh: () => this.refreshTitleOverview(),
+        });
+        this.makeTableSortable(document.querySelector('#tab-conflicts table'), {
+          tableKey: 'conflicts',
+          columns: [null, 'status', 'count', 'title', 'detail', null],
+          skipColumns: [0, 5],
+          descendingColumns: ['count'],
+          refresh: () => { this.conflictsPage = 0; this.refreshRows(); },
+        });
+        this.makeTableSortable(document.querySelector('#tab-integrated table'), {
+          tableKey: 'integrated',
+          columns: ['title', 'citation', 'text', 'added', 'integrated', 'page'],
+          descendingColumns: ['added', 'integrated'],
+          refresh: () => { this.integratedPage = 0; this.refreshIntegrated(); },
+        });
+        this.makeTableSortable(document.querySelector('#tab-mappings table'), {
+          tableKey: 'mappings',
+          columns: ['title', 'resolution', 'status', 'count', 'updated', null],
+          skipColumns: [5],
+          descendingColumns: ['count', 'updated'],
+          refresh: () => { this.mappingsPage = 0; this.refreshMappings(); },
+        });
+      },
+
+      toggleTitle(title) {
+        this.expandedTitles[title] = !this.expandedTitles[title];
+        this.refreshRows();
       },
 
       refreshRows(resetPage = false) {
@@ -1600,10 +2280,18 @@
         if (!tbody) return;
         tbody.textContent = '';
         const needle = (document.getElementById('search')?.value || '').toLowerCase();
-        const filtered = this.rows.filter(row => `${row.source} ${row.status} ${row.title} ${row.detail || ''} ${(row.candidates || []).map(c => `${c.citation_key} ${c.title}`).join(' ')}`.toLowerCase().includes(needle));
+        const filtered = this.rows.filter(row => `${(row.statuses || [row.status]).join(' ')} ${(row.sources || []).join(' ')} ${row.title} ${row.detail || ''} ${(row.candidates || []).map(c => `${c.citation_key} ${c.title}`).join(' ')} ${(row.clippings || []).map(c => c.text).join(' ').slice(0, 4000)}`.toLowerCase().includes(needle));
+        const sorted = this.sortRows(filtered, 'conflicts', {
+          status: row => row.status || '',
+          count: row => this.conflictAffected(row).failed,
+          title: row => row.title || '',
+          detail: row => `${row.candidates?.[0]?.citation_key || row.candidates?.[0]?.key || ''} ${row.detail || ''}`,
+        });
         if (resetPage) this.conflictsPage = 0;
-        const page = this.paginate(filtered, 'conflictsPage', 'conflictsPageSize');
+        const page = this.paginate(sorted, 'conflictsPage', 'conflictsPageSize');
         this.refreshPagination('conflicts-pagination', 'conflictsPage', 'conflictsPageSize', page.totalPages, () => this.refreshRows());
+        const countNote = document.getElementById('conflicts-count');
+        if (countNote) countNote.textContent = `${filtered.length} unique titles — page ${this.conflictsPage + 1}/${page.totalPages}`;
         if (!filtered.length) {
           const tr = document.createElement('tr');
           const td = document.createElement('td');
@@ -1616,31 +2304,62 @@
         for (let idx = 0; idx < page.rows.length; idx++) {
           const row = page.rows[idx];
           const globalIndex = this.rows.indexOf(row);
+          const expanded = !!this.expandedTitles[row.title];
           const tr = document.createElement('tr');
-          const tdSource = document.createElement('td');
-          tdSource.textContent = row.source;
-          tr.appendChild(tdSource);
+          // Chevron cell
+          const tdExp = document.createElement('td');
+          tdExp.dataset.sortValue = '';
+          const clipCount = (row.clippings || []).length;
+          if (clipCount) {
+            const btn = document.createElement('button');
+            btn.className = 'expander';
+            btn.textContent = expanded ? '▾' : '▸';
+            btn.title = expanded ? `Hide ${clipCount} source clipping(s)` : `Show ${clipCount} source clipping(s)`;
+            btn.addEventListener('click', () => this.toggleTitle(row.title));
+            tdExp.appendChild(btn);
+          } else {
+            tdExp.textContent = '';
+            tdExp.style.color = 'var(--faint)';
+          }
+          tr.appendChild(tdExp);
           const tdStatus = document.createElement('td');
-          const pill = document.createElement('span');
-          pill.className = 'pill';
-          pill.textContent = row.status;
-          tdStatus.appendChild(pill);
+          tdStatus.dataset.sortValue = row.status || '';
+          const stack = document.createElement('div');
+          stack.className = 'status-stack';
+          for (const s of (row.statuses || [row.status])) {
+            const pill = document.createElement('span');
+            pill.className = 'pill';
+            pill.textContent = s;
+            pill.title = `Sources: ${(row.sources || []).join(', ')}`;
+            stack.appendChild(pill);
+          }
+          tdStatus.appendChild(stack);
           tr.appendChild(tdStatus);
           const tdCount = document.createElement('td');
-          tdCount.textContent = String(row.count);
+          const affected = this.conflictAffected(row);
+          tdCount.textContent = affected.failed === affected.total
+            ? String(affected.total)
+            : `${affected.failed} / ${affected.total}`;
+          tdCount.title = `${affected.failed} with problems out of ${affected.total} source clipping(s)`;
+          tdCount.dataset.sortValue = String(affected.failed).padStart(8, '0');
           tr.appendChild(tdCount);
           const tdTitle = document.createElement('td');
           tdTitle.textContent = row.title;
-          tdTitle.title = row.title;
+          const affectedTitle = this.conflictAffected(row);
+          tdTitle.title = `${row.title}\nSources: ${(row.sources || []).join(', ')}\n${affectedTitle.failed} with problems / ${affectedTitle.total} source clipping(s) — click ▸ to expand`;
+          tdTitle.dataset.sortValue = row.title;
           tr.appendChild(tdTitle);
           const tdDetail = document.createElement('td');
-          if (row.detail) {
-            tdDetail.textContent = row.detail;
-          } else if (row.candidates && row.candidates.length) {
+          if (row.candidates && row.candidates.length) {
             const top = row.candidates[0];
             const cite = top.citation_key || top.key || top.item_id || '';
-            tdDetail.textContent = `${row.candidates.length} suggestion(s) — top: ${cite} (${top.score ? Math.round(top.score*100)+'%' : '—'})`;
-            tdDetail.title = row.candidates.slice(0,4).map(c=> `${c.citation_key||c.key}: ${c.title}`).join('\n');
+            tdDetail.textContent = `${row.candidates.length} suggestion(s) — top: ${cite} (${top.score ? Math.round(top.score*100)+'%' : '—'})${row.detail ? ' · ' + row.detail : ''}`;
+            tdDetail.title = row.candidates.slice(0,4).map(c=> `${c.citation_key||c.key}: ${c.title}`).join('\n') + (row.detail ? '\n\nPosition: ' + row.detail : '');
+          } else if (row.mappedTarget) {
+            tdDetail.textContent = `Mapped to ${row.mappedTarget}${row.detail ? ' · ' + row.detail : ''}`;
+            tdDetail.title = `Title already maps to ${row.mappedTarget} (match status: ${row.matchStatusFull || 'n/a'}). These clips need positioning, not a new mapping.${row.detail ? '\n\nPosition: ' + row.detail : ''}`;
+          } else if (row.detail) {
+            tdDetail.textContent = row.detail;
           } else {
             tdDetail.textContent = 'No candidates';
           }
@@ -1669,6 +2388,15 @@
               list.appendChild(opt);
             }
             tdActions.appendChild(list);
+          } else if (row.mappedTarget) {
+            const mapped = document.createElement('div');
+            mapped.className='muted';
+            mapped.style.fontSize='11px';
+            const noAttach = (row.statuses || []).includes('matched-title-no-attachment');
+            mapped.textContent = noAttach
+              ? `Already mapped to ${row.mappedTarget} — attach a PDF/EPUB to it in Zotero, then Retry. Remap below only if the target is wrong.`
+              : `Already mapped to ${row.mappedTarget} — fix the attachment/position issue, then Retry. Remap below only if the target is wrong.`;
+            tdActions.appendChild(mapped);
           } else {
             const noCand = document.createElement('div');
             noCand.className='muted';
@@ -1680,7 +2408,7 @@
           manualRow.className='manual-row';
           const manualInput = document.createElement('input');
           manualInput.id=`manual-${globalIndex}`;
-          manualInput.placeholder='or enter any citekey / Zotero key / ID';
+          manualInput.placeholder = row.mappedTarget ? 'remap to a different key…' : 'or enter any citekey / Zotero key / ID';
           manualInput.title='Examples: deleuze1987  |  JTDWDKRH  |  51395';
           manualRow.appendChild(manualInput);
           const btnManual = document.createElement('button');
@@ -1697,6 +2425,97 @@
           tdActions.appendChild(btnIgnore);
           tr.appendChild(tdActions);
           tbody.appendChild(tr);
+          // Expandable detail row with per-highlight text
+          if (expanded && clipCount) {
+            const dtr = document.createElement('tr');
+            dtr.className = 'detail-row';
+            const dtd = document.createElement('td');
+            dtd.colSpan = 6;
+            const list = document.createElement('div');
+            list.className = 'clip-list';
+            const head = document.createElement('div');
+            head.className = 'muted';
+            const affectedHead = this.conflictAffected(row);
+            head.textContent = affectedHead.failed === affectedHead.total
+              ? `${affectedHead.total} source clipping(s) for this title:`
+              : `${affectedHead.failed} with problems / ${affectedHead.total} source clipping(s) for this title:`;
+            list.appendChild(head);
+            const affectedClips = (row.clippings || []).filter(c =>
+              (c.problems && c.problems.length) || (c.status && c.status !== '' && c.status !== 'positioned')
+            );
+            const showAll = !affectedClips.length || affectedClips.length === (row.clippings || []).length;
+            const clipsToShow = showAll ? (row.clippings || []) : affectedClips;
+            for (const clip of clipsToShow.slice(0, 60)) {
+              const item = document.createElement('div');
+              item.className = 'clip-item';
+              const chead = document.createElement('div');
+              chead.className = 'clip-head';
+              const bits = [];
+              if (clip.kind) bits.push(clip.kind);
+              if (clip.page) bits.push('p. ' + clip.page);
+              if (clip.location) bits.push('loc. ' + clip.location);
+              if (clip.status && clip.status !== row.status) bits.push(clip.status);
+              chead.textContent = bits.join(' · ') || clip.status || 'highlight';
+              item.appendChild(chead);
+              const ctext = document.createElement('div');
+              ctext.className = 'clip-text';
+              let t = clip.text || '(no text)';
+              if (t.length > 420) t = t.slice(0, 420) + '…';
+              ctext.textContent = t;
+              item.appendChild(ctext);
+              if (clip.problems && clip.problems.length) {
+                const prob = document.createElement('div');
+                prob.className = 'clip-problem';
+                prob.textContent = clip.problems.join('; ');
+                item.appendChild(prob);
+              }
+              if (clip.pageHint?.text) {
+                const hint = document.createElement('div');
+                hint.className = 'clip-problem';
+                hint.style.color = 'var(--muted)';
+                hint.style.whiteSpace = 'pre-wrap';
+                let ht = clip.pageHint.text;
+                if (ht.length > 900) ht = ht.slice(0, 900) + '…';
+                hint.textContent = `Near Kindle p.${clip.pageHint.kindle_page} the PDF reads:\n${ht}`;
+                hint.title = 'Extracted PDF text around the Kindle page hint — find the passage and place the highlight manually in Zotero, or Copy text above.';
+                item.appendChild(hint);
+              }
+              if (clip.id) {
+                const actions = document.createElement('div');
+                actions.style.display = 'flex';
+                actions.style.gap = '6px';
+                actions.style.marginTop = '6px';
+                const copyBtn = document.createElement('button');
+                copyBtn.textContent = 'Copy text';
+                copyBtn.className = 'row-btn';
+                copyBtn.title = 'Copy this clipping text for manual insertion in Zotero';
+                copyBtn.addEventListener('click', (ev) => { ev.stopPropagation(); this.copyClipText(clip); });
+                actions.appendChild(copyBtn);
+                const discardBtn = document.createElement('button');
+                discardBtn.textContent = 'Discard';
+                discardBtn.className = 'row-btn';
+                discardBtn.title = 'Permanently discard this clipping — it will not be retried or shown again';
+                discardBtn.addEventListener('click', (ev) => { ev.stopPropagation(); this.discardClip(clip.id, row.title); });
+                actions.appendChild(discardBtn);
+                item.appendChild(actions);
+              }
+              list.appendChild(item);
+            }
+            if (clipsToShow.length > 60) {
+              const more = document.createElement('div');
+              more.className = 'muted';
+              more.textContent = `… and ${clipsToShow.length - 60} more with problems. The rest are integrated — see Integrated tab.`;
+              list.appendChild(more);
+            } else if (!showAll) {
+              const note = document.createElement('div');
+              note.className = 'muted';
+              note.textContent = `Showing only the ${clipsToShow.length} with problems. The other ${row.clippings.length - clipsToShow.length} for this title are integrated — see Integrated tab.`;
+              list.appendChild(note);
+            }
+            dtd.appendChild(list);
+            dtr.appendChild(dtd);
+            tbody.appendChild(dtr);
+          }
         }
       },
     };

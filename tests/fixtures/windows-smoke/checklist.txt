@@ -1,0 +1,36 @@
+Kanzi Windows smoke test (Parallels VM)
+
+COPY THESE 3 FILES INTO THE VM:
+- My Clippings.txt
+- kanzi-dummy.epub
+- kanzi-dummy.pdf
+- dist/kanzi.xpi (from repo root, same cross-platform build)
+
+1) PowerShell:
+   winget install --id Python.Python.3.13 --exact
+   winget install --id oschwartz10612.Poppler --exact
+   winget install --id QPDF.QPDF --exact
+   python --version
+   pdftotext -v
+   pdfinfo -v
+   qpdf --version
+
+2) Fully quit + reopen Zotero (picks up PATH).
+
+3) Fresh Zotero, sync off. Create:
+   - Book "Kanzi Dummy EPUB" + attach kanzi-dummy.epub
+   - Book "Kanzi Dummy PDF" + attach kanzi-dummy.pdf
+
+4) Tools -> Kanzi -> Choose My Clippings.txt (the copied one).
+   Leave Python path empty to test auto-detect.
+
+EXPECT:
+- 2 highlights position and await review, 1 title in Conflicts
+  ("Unknown Book Title XYZ").
+- Summary shows new Status by Kindle Title table with source counts.
+- Save a mapping for the unknown title -> Re-import processes it.
+- Table headers sort and persist across pages.
+
+IF PYTHON NOT FOUND:
+  Settings shows detected path hint; paste full python.exe path,
+  Save Settings, retry.

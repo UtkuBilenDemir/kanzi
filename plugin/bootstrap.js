@@ -1,4 +1,4 @@
-var KindleZoteroImporter = {
+var Kanzi = {
   id: "kindle-zotero-importer@utkubilen.de",
   menuItems: [],
   runtimeProjectDir: "",
@@ -16,7 +16,7 @@ var KindleZoteroImporter = {
     );
     this.chromeHandle = addonManagerStartup.registerChrome(
       Services.io.newURI(this.rootURI + "manifest.json"),
-      [["content", "kindle-zotero-importer", ""]]
+      [["content", "kanzi", ""]]
     );
     await Zotero.initializationPromise;
     await this.ensureRuntime();
@@ -81,7 +81,7 @@ var KindleZoteroImporter = {
     }
 
     const doc = win.document;
-    if (doc.getElementById("kindle-zotero-importer-manager")) {
+    if (doc.getElementById("kanzi-manager")) {
       return;
     }
 
@@ -92,7 +92,7 @@ var KindleZoteroImporter = {
     }
 
     const managerItem = doc.createXULElement("menuitem");
-    managerItem.setAttribute("id", "kindle-zotero-importer-manager");
+    managerItem.setAttribute("id", "kanzi-manager");
     managerItem.setAttribute("label", "Kanzi...");
     managerItem.addEventListener("command", () => this.openManager());
     popup.appendChild(managerItem);
@@ -136,7 +136,14 @@ var KindleZoteroImporter = {
   },
 
   getPythonPath() {
-    return this.getPref("pythonPath", "python3");
+    const fallback = this.getDefaultPython();
+    const value = this.getPref("pythonPath", fallback);
+    // Existing Windows installs may have "python3" stored from the old
+    // Unix-only default; that binary name does not exist on Windows.
+    if (this.isWindows() && value === "python3") {
+      return "python";
+    }
+    return value || fallback;
   },
 
   getZoteroDbPath() {
@@ -149,12 +156,115 @@ var KindleZoteroImporter = {
     return this.getPref("zoteroStorageRoot", dataDir ? PathUtils.join(dataDir, "storage") : "");
   },
 
+  isWindows() {
+    try {
+      return Services.appinfo.OS === "WINNT";
+    } catch (_error) {
+      return false;
+    }
+  },
+
+  getDefaultPython() {
+    return this.isWindows() ? "python" : "python3";
+  },
+
+  getEnvironmentVariable(name) {
+    try {
+      return Cc["@mozilla.org/process/environment;1"]
+        .getService(Ci.nsIEnvironment)
+        .get(name) || "";
+    } catch (_error) {
+      return "";
+    }
+  },
+
+  joinWindowsPath(base, ...parts) {
+    if (!base) {
+      return "";
+    }
+    return [String(base).replace(/[\\/]+$/, ""), ...parts]
+      .map((part, index) => index ? String(part).replace(/^[\\/]+|[\\/]+$/g, "") : part)
+      .join("\\");
+  },
+
+  getWindowsPythonCandidates(configuredPath) {
+    const localAppData = this.getEnvironmentVariable("LOCALAPPDATA");
+    const programFiles = this.getEnvironmentVariable("ProgramFiles");
+    const programFilesX86 = this.getEnvironmentVariable("ProgramFiles(x86)");
+    const userProfile = this.getEnvironmentVariable("USERPROFILE");
+    const systemDrive = this.getEnvironmentVariable("SystemDrive") || "C:";
+    const versions = ["314", "313", "312", "311"];
+    const candidates = [configuredPath];
+    for (const version of versions) {
+      candidates.push(
+        this.joinWindowsPath(localAppData, "Programs", "Python", `Python${version}`, "python.exe"),
+        this.joinWindowsPath(programFiles, `Python${version}`, "python.exe"),
+        this.joinWindowsPath(programFilesX86, `Python${version}-32`, "python.exe"),
+        this.joinWindowsPath(systemDrive, `Python${version}`, "python.exe")
+      );
+    }
+    candidates.push(
+      this.joinWindowsPath(localAppData, "Python", "bin", "python.exe"),
+      this.joinWindowsPath(userProfile, "scoop", "apps", "python", "current", "python.exe"),
+      this.joinWindowsPath(userProfile, "miniconda3", "python.exe"),
+      this.joinWindowsPath(userProfile, "anaconda3", "python.exe")
+    );
+    for (const directory of this.getEnvironmentVariable("PATH").split(";")) {
+      const cleanDirectory = directory.trim().replace(/^"|"$/g, "");
+      if (cleanDirectory) {
+        candidates.push(
+          this.joinWindowsPath(cleanDirectory, "python.exe"),
+          this.joinWindowsPath(cleanDirectory, "python3.exe")
+        );
+      }
+    }
+    return [...new Set(candidates.filter(Boolean))];
+  },
+
+  async resolvePythonPath(configuredPath) {
+    let candidates;
+    if (this.isWindows()) {
+      candidates = this.getWindowsPythonCandidates(configuredPath);
+    } else if (Services.appinfo.OS === "Darwin") {
+      candidates = [configuredPath];
+      candidates.push(
+        "/opt/homebrew/bin/python3",
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/opt/homebrew/opt/python@3.13/bin/python3.13",
+        "/opt/homebrew/opt/python@3.12/bin/python3.12",
+        "/opt/homebrew/opt/python@3.11/bin/python3.11",
+        "/usr/local/bin/python3",
+        "/usr/local/opt/python@3.14/bin/python3.14",
+        "/usr/local/opt/python@3.13/bin/python3.13",
+        "/usr/local/opt/python@3.12/bin/python3.12",
+        "/usr/local/opt/python@3.11/bin/python3.11",
+        "/usr/bin/python3"
+      );
+    } else {
+      candidates = [configuredPath, "/usr/bin/python3", "/usr/local/bin/python3"];
+    }
+    for (const candidate of candidates) {
+      if (!candidate || (!candidate.includes("/") && !candidate.includes("\\"))) continue;
+      try {
+        if (await IOUtils.exists(candidate)) return candidate;
+      } catch (_error) {}
+    }
+    return configuredPath || this.getDefaultPython();
+  },
+
+  joinPath(...parts) {
+    if (typeof PathUtils !== "undefined" && PathUtils.join) {
+      return PathUtils.join(...parts);
+    }
+    return parts.join("/").replaceAll("//", "/");
+  },
+
   getConfigPath() {
-    return this.getProjectDir() + "/plugin-config.json";
+    return this.joinPath(this.getProjectDir(), "plugin-config.json");
   },
 
   artifactPath(relativePath) {
-    return this.getProjectDir() + "/" + relativePath;
+    return this.joinPath(this.getProjectDir(), ...String(relativePath).split("/"));
   },
 
   async openArtifact(relativePath) {
@@ -177,17 +287,6 @@ var KindleZoteroImporter = {
       zoteroDbPath: this.getZoteroDbPath(),
       zoteroStorageRoot: this.getZoteroStorageRoot(),
     };
-    if (settings.pythonPath === "python3") {
-      const candidates = Services.appinfo.OS === "Darwin"
-        ? ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
-        : ["/usr/bin/python3", "/usr/local/bin/python3"];
-      for (const candidate of candidates) {
-        if (await IOUtils.exists(candidate)) {
-          settings.pythonPath = candidate;
-          break;
-        }
-      }
-    }
     try {
       const text = await Zotero.File.getContentsAsync(this.getConfigPath());
       const parsed = JSON.parse(text);
@@ -200,12 +299,13 @@ var KindleZoteroImporter = {
       if (parsed.colorMap) settings.colourMap = parsed.colorMap;
       // also check colour-map.json for Python pipeline
       try {
-        const cmapText = await Zotero.File.getContentsAsync(this.getProjectDir() + "/colour-map.json");
+        const cmapText = await Zotero.File.getContentsAsync(this.joinPath(this.getProjectDir(), "colour-map.json"));
         settings.colourMap = JSON.parse(cmapText);
       } catch (_e2) {}
     } catch (_error) {
       // The config file is optional; defaults/preferences are enough for first run.
     }
+    settings.pythonPath = await this.resolvePythonPath(settings.pythonPath);
     return settings;
   },
 
@@ -267,8 +367,8 @@ var KindleZoteroImporter = {
     const data = await this.loadManagerData();
     const io = { plugin: this, settings, data };
     this.managerWindow = this.getMainWindow().openDialog(
-      "chrome://kindle-zotero-importer/content/manager.html",
-      "kindle-zotero-importer-manager-window",
+      "chrome://kanzi/content/manager.html",
+      "kanzi-manager-window",
       "chrome,centerscreen,resizable",
       io
     );
@@ -276,6 +376,7 @@ var KindleZoteroImporter = {
 
   async loadManagerData() {
     return {
+      clippings: await this.readJsonArtifact("clippings.json"),
       matches: await this.readJsonArtifact("matches.json"),
       generatedOverrides: await this.readJsonArtifact("match-overrides.generated.json"),
       positionedPlan: await this.readJsonArtifact("import-plan.positioned.json"),
@@ -305,11 +406,17 @@ var KindleZoteroImporter = {
     const index = payload.overrides.findIndex(
       (entry) => entry.clipping_title === resolution.clipping_title
     );
+    const clippings = await this.readJsonArtifact("clippings.json");
+    const sourceCount = this.countClippingsForTitle(clippings, resolution.clipping_title);
+    const clippingCount = sourceCount || resolution.clipping_count || resolution.review?.clipping_count || 0;
     const nowIso = new Date().toISOString();
     const entry = {
       clipping_title: resolution.clipping_title,
       resolution: resolution.resolution,
-      review: resolution.review || { status: "manager", clipping_count: resolution.clipping_count || 0 },
+      review: {
+        ...(resolution.review || { status: "manager" }),
+        clipping_count: clippingCount,
+      },
       created_at: nowIso,
       updated_at: nowIso,
     };
@@ -329,6 +436,13 @@ var KindleZoteroImporter = {
     return entry;
   },
 
+  countClippingsForTitle(payload, clippingTitle) {
+    return (payload?.clippings || []).reduce(
+      (count, clipping) => count + (clipping.title === clippingTitle ? 1 : 0),
+      0
+    );
+  },
+
   async deleteOverride(clippingTitle) {
     if (!clippingTitle) {
       throw new Error("Missing clipping title for delete");
@@ -346,6 +460,23 @@ var KindleZoteroImporter = {
     return true;
   },
 
+  async discardClip(clippingId) {
+    if (!clippingId) {
+      throw new Error("Missing clipping id for discard");
+    }
+    const path = this.artifactPath("import-plan.final.json");
+    const plan = JSON.parse(await Zotero.File.getContentsAsync(path));
+    const discarded = new Set(plan.discarded_clipping_ids || []);
+    discarded.add(clippingId);
+    plan.discarded_clipping_ids = [...discarded].sort();
+    // Also drop from deferred so it is never re-queued.
+    if (Array.isArray(plan.deferred_clipping_ids)) {
+      plan.deferred_clipping_ids = plan.deferred_clipping_ids.filter((id) => id !== clippingId);
+    }
+    await Zotero.File.putContentsAsync(path, JSON.stringify(plan, null, 2) + "\n");
+    return true;
+  },
+
   async saveSettingsFromManager(newSettings) {
     const toSave = {
       projectDir: newSettings.projectDir || this.getProjectDir(),
@@ -358,7 +489,7 @@ var KindleZoteroImporter = {
       // also write colour-map.json for Python pipeline (mirrors plugin-config)
       try {
         await Zotero.File.putContentsAsync(
-          this.getProjectDir() + "/colour-map.json",
+          this.joinPath(this.getProjectDir(), "colour-map.json"),
           JSON.stringify(newSettings.colourMap, null, 2) + "\n"
         );
       } catch (_e) {}
@@ -376,7 +507,7 @@ var KindleZoteroImporter = {
 
   async loadColourMap() {
     try {
-      const text = await Zotero.File.getContentsAsync(this.getProjectDir() + "/colour-map.json");
+      const text = await Zotero.File.getContentsAsync(this.joinPath(this.getProjectDir(), "colour-map.json"));
       return JSON.parse(text);
     } catch (_e) {}
     try {
@@ -416,7 +547,7 @@ var KindleZoteroImporter = {
       if (result !== fp.returnOK) {
         return null;
       }
-      return fp.file;
+      return this.filePickerResultToPath(fp.file);
     } catch (error) {
       Zotero.logError(error);
       return this.promptForPath(
@@ -427,12 +558,32 @@ var KindleZoteroImporter = {
     }
   },
 
+  filePickerResultToPath(file) {
+    if (!file) {
+      return null;
+    }
+    if (typeof file === "string") {
+      return file;
+    }
+    // Mozilla FilePicker returns an nsIFile; Python needs a native string path.
+    if (typeof file.path === "string" && file.path) {
+      return file.path;
+    }
+    try {
+      const str = String(file);
+      if (str && str !== "[object Object]") {
+        return str;
+      }
+    } catch (_error) {}
+    return null;
+  },
+
   async runPipeline(clippingsPath, settings, isFull = false, retryUnresolved = false) {
-    const python = settings.pythonPath;
+    const python = settings.pythonPath || this.getDefaultPython();
     const projectDir = settings.projectDir;
-    const runner = projectDir + "/plugin_runner.py";
-    const summaryOutput = projectDir + "/plugin-summary.json";
-    const progressOutput = projectDir + "/plugin-progress.json";
+    const runner = this.joinPath(projectDir, "plugin_runner.py");
+    const summaryOutput = this.joinPath(projectDir, "plugin-summary.json");
+    const progressOutput = this.joinPath(projectDir, "plugin-progress.json");
     const args = [
       runner,
       "run",
@@ -458,12 +609,34 @@ var KindleZoteroImporter = {
       args.push("--retry-unresolved");
     }
 
-    await this.exec(python, args);
-    return JSON.parse(await Zotero.File.getContentsAsync(summaryOutput));
+    let execResult = null;
+    try {
+      execResult = await this.exec(python, args);
+    } catch (error) {
+      const installHint = this.isWindows()
+        ? `Install Python 3.11 or newer, fully restart Zotero, and let Kanzi detect python.exe. `
+        : `Install Python 3.11 or newer and check the Python path in Kanzi Settings. `;
+      throw new Error(
+        `Python could not run the Kanzi pipeline (${python}): ${error && error.message ? error.message : error}. ` +
+          installHint
+      );
+    }
+    try {
+      return JSON.parse(await Zotero.File.getContentsAsync(summaryOutput));
+    } catch (error) {
+      const detail = execResult ? ` Python output: ${JSON.stringify(execResult).slice(0, 1000)}.` : "";
+      throw new Error(
+        `Python pipeline did not write ${summaryOutput}.${detail} ` +
+          `Python: ${python}. Runner: ${runner}. ` +
+          `Make sure Python 3 is installed and reachable, then check the project directory is writable.`
+      );
+    }
   },
 
   async runManagedImport(manager) {
     const clippingsPath = await this.pickFile("Select Kindle My Clippings.txt", "*.txt");
+    // NOTE: writing now happens only after the user reviews the pending
+    // highlights and presses Integrate (see integratePending).
     if (!clippingsPath) {
       return;
     }
@@ -474,17 +647,23 @@ var KindleZoteroImporter = {
 
   async runManagedImportWithPath(manager, clippingsPath, isFullOverride, retryUnresolvedOverride) {
     try {
+      clippingsPath = this.filePickerResultToPath(clippingsPath) || clippingsPath;
       if (!clippingsPath) {
         throw new Error("No clippings file selected");
       }
       const settings = await this.getRuntimeSettings();
-      const progressPath = settings.projectDir + "/plugin-progress.json";
+      const progressPath = this.joinPath(settings.projectDir, "plugin-progress.json");
       // Determine full vs incremental from explicit arg or manager checkbox
       const isFull = typeof isFullOverride === "boolean" ? isFullOverride : (manager.getFullReimport ? manager.getFullReimport() : false);
       const retryUnresolved = typeof retryUnresolvedOverride === "boolean"
         ? retryUnresolvedOverride
         : (manager.getRetryUnresolved ? manager.getRetryUnresolved() : false);
       manager.beginRun(clippingsPath);
+      const finalPlanPath = this.joinPath(settings.projectDir, "import-plan.final.json");
+      let previousFinalPlan = null;
+      try {
+        previousFinalPlan = JSON.parse(await Zotero.File.getContentsAsync(finalPlanPath));
+      } catch (_backupError) {}
       try {
         await Zotero.File.removeIfExists(progressPath);
       } catch (_error) {}
@@ -511,18 +690,140 @@ var KindleZoteroImporter = {
       const finalPlan = JSON.parse(
         await Zotero.File.getContentsAsync(summary.outputs.final_plan)
       );
-      manager.updateProgress(96, "Writing annotations", "Saving annotations in Zotero");
-      const results = await this.writeAnnotations(finalPlan, false, (completed, total) => {
-        const percent = total ? 96 + Math.floor((completed / total) * 4) : 100;
-        manager.updateProgress(percent, "Writing annotations", `${completed} of ${total} checked`);
-      });
-      await this.reconcileWriterState(summary.outputs.final_plan, finalPlan, results);
-      const data = await this.loadManagerData();
-      await manager.completeRun(summary, results, data);
+      const pendingCount = (finalPlan.annotations || []).length;
+      const pendingDeletions = (finalPlan.deletions || []).length;
+      if (!pendingCount && !pendingDeletions) {
+        // Nothing new — run the maintenance sweep and finish as before.
+        manager.updateProgress(96, "Writing annotations", "Checking existing annotations");
+        const emptyResults = await this.writeAnnotations(finalPlan, false, (completed, total) => {
+          const percent = total ? 96 + Math.floor((completed / total) * 4) : 100;
+          manager.updateProgress(percent, "Writing annotations", `${completed} of ${total} checked`);
+        });
+        await this.reconcileWriterState(summary.outputs.final_plan, finalPlan, emptyResults);
+        const emptyData = await this.loadManagerData();
+        await manager.completeRun(summary, emptyResults, emptyData);
+        return;
+      }
+      // Pause before writing: let the user review and select what to integrate.
+      const fullDeltaIds = (finalPlan.annotations || []).map((a) => a.clipping_id);
+      // The pipeline has already written its generated history. Replace it with
+      // a safe ledger until Integrate is pressed, including if the window closes.
+      const deferredPlan = this.deferPendingPlan(previousFinalPlan, finalPlan, fullDeltaIds);
+      await Zotero.File.putContentsAsync(
+        summary.outputs.final_plan,
+        JSON.stringify(deferredPlan, null, 2) + "\n"
+      );
+      this._pending = {
+        summary,
+        finalPlan,
+        finalPlanPath: summary.outputs.final_plan,
+        fullDeltaIds,
+        previousFinalPlan,
+      };
+      manager.updateProgress(
+        90,
+        "Review pending",
+        `${pendingCount} highlight(s) ready — select and press Integrate`
+      );
+      manager.showPendingReview(summary, finalPlan);
     } catch (error) {
       Zotero.logError(error);
       manager.failRun(String(error && error.stack ? error.stack : error));
     }
+  },
+
+  deferPendingPlan(previousPlan, generatedPlan, deferredIds) {
+    const plan = previousPlan
+      ? { ...previousPlan }
+      : {
+          ...generatedPlan,
+          annotations: [],
+          all_annotations: [],
+          deletions: [],
+          annotation_count: 0,
+          delta_annotation_count: 0,
+        };
+    const deferred = new Set(plan.deferred_clipping_ids || []);
+    for (const id of deferredIds || []) deferred.add(id);
+    plan.deferred_clipping_ids = [...deferred].sort();
+    return plan;
+  },
+
+  // Pure helper (tested): narrow a pipeline plan to the user's selection.
+  filterPlanForSelection(finalPlan, fullDeltaIds, selectedIds, previousPlan = null) {
+    const selected = new Set(selectedIds || []);
+    const unselected = new Set(
+      (fullDeltaIds || []).filter((id) => !selected.has(id))
+    );
+    const plan = { ...finalPlan };
+    plan.annotations = (finalPlan.annotations || []).filter((a) =>
+      selected.has(a.clipping_id)
+    );
+    if (unselected.size && Array.isArray(finalPlan.all_annotations)) {
+      plan.all_annotations = finalPlan.all_annotations.filter(
+        (a) => !unselected.has(a.clipping_id)
+      );
+      const present = new Set(plan.all_annotations.map((a) => a.clipping_id));
+      for (const annotation of previousPlan?.all_annotations || previousPlan?.annotations || []) {
+        if (unselected.has(annotation.clipping_id) && !present.has(annotation.clipping_id)) {
+          plan.all_annotations.push(annotation);
+          present.add(annotation.clipping_id);
+        }
+      }
+    }
+    const deferred = new Set(previousPlan?.deferred_clipping_ids || []);
+    for (const id of selected) deferred.delete(id);
+    for (const id of unselected) deferred.add(id);
+    plan.deferred_clipping_ids = [...deferred].sort();
+    plan.delta_annotation_count = plan.annotations.length;
+    if (Array.isArray(plan.all_annotations)) {
+      plan.annotation_count = plan.all_annotations.length;
+    }
+    return plan;
+  },
+
+  async integratePending(manager, selectedIds) {
+    const pending = this._pending;
+    if (!pending) {
+      throw new Error("No pending review to integrate");
+    }
+    try {
+      const plan = this.filterPlanForSelection(
+        pending.finalPlan,
+        pending.fullDeltaIds,
+        selectedIds,
+        pending.previousFinalPlan
+      );
+      manager.updateProgress(96, "Writing annotations", "Saving selected annotations in Zotero");
+      const results = await this.writeAnnotations(plan, false, (completed, total) => {
+        const percent = total ? 96 + Math.floor((completed / total) * 4) : 100;
+        manager.updateProgress(percent, "Writing annotations", `${completed} of ${total} checked`);
+      });
+      await this.reconcileWriterState(pending.finalPlanPath, plan, results);
+      this._pending = null;
+      const data = await this.loadManagerData();
+      await manager.completeRun(pending.summary, results, data);
+    } catch (error) {
+      Zotero.logError(error);
+      manager.failRun(String(error && error.stack ? error.stack : error));
+    }
+  },
+
+  async cancelPendingReview(manager) {
+    // The deferred ledger was written before the review appeared, so closing
+    // or cancelling never records pending highlights as integrated.
+    this._pending = null;
+    manager.hidePendingReview();
+    manager.cancelRun("Review cancelled — nothing was written. Run again when ready.");
+    try {
+      const data = await this.loadManagerData();
+      manager.data = data;
+      manager.rows = manager.conflictRows();
+      manager.refreshRows(true);
+      manager.refreshTitleOverview();
+      manager.refreshIntegrated(true);
+      manager.refreshMappings(true);
+    } catch (_reloadError) {}
   },
 
   async exec(command, args) {
@@ -814,6 +1115,117 @@ var KindleZoteroImporter = {
     throw new Error("Existing annotation cannot be saved by this Zotero build");
   },
 
+  async saveRelatedItem(item) {
+    const options = { skipDateModifiedUpdate: true };
+    if (item.save) {
+      await item.save(options);
+      return;
+    }
+    if (item.saveTx) {
+      await item.saveTx(options);
+      return;
+    }
+    throw new Error("Related item cannot be saved by this Zotero build");
+  },
+
+  async addRelatedItemRelations(entries, dryRun, results) {
+    const pairs = new Map();
+    for (const entry of entries || []) {
+      for (const target of entry.related_items || []) {
+        const sourceID = Number(entry.parent_item_id);
+        const targetID = Number(target.item_id);
+        if (!sourceID || !targetID || sourceID === targetID) continue;
+        const pairKey = [sourceID, targetID].sort((a, b) => a - b).join(":");
+        if (!pairs.has(pairKey)) {
+          pairs.set(pairKey, { sourceID, targetID, citationKey: target.citation_key || "" });
+        }
+      }
+    }
+
+    for (const pair of pairs.values()) {
+      try {
+        const source = Zotero.Items.get(pair.sourceID);
+        const target = Zotero.Items.get(pair.targetID);
+        if (!source || !target) {
+          throw new Error(`Related item pair not found: ${pair.sourceID} -> ${pair.targetID}`);
+        }
+        if (dryRun) {
+          results.relationsPlanned += 1;
+          continue;
+        }
+        if (!source.addRelatedItem || !target.addRelatedItem) {
+          throw new Error("This Zotero build does not support addRelatedItem()");
+        }
+
+        let changed = false;
+        const addBothDirections = async () => {
+          const sourceChanged = source.addRelatedItem(target);
+          const targetChanged = target.addRelatedItem(source);
+          if (sourceChanged) await this.saveRelatedItem(source);
+          if (targetChanged) await this.saveRelatedItem(target);
+          changed = sourceChanged || targetChanged;
+        };
+        if (Zotero.DB?.executeTransaction) {
+          await Zotero.DB.executeTransaction(addBothDirections);
+        } else {
+          await addBothDirections();
+        }
+        if (changed) results.relationsAdded += 1;
+        else results.relationsSkipped += 1;
+      } catch (error) {
+        Zotero.logError(error);
+        results.relationFailures.push({
+          parent_item_id: pair.sourceID,
+          related_item_id: pair.targetID,
+          citation_key: pair.citationKey,
+          message: String(error),
+        });
+      }
+    }
+  },
+
+  async backfillRelationLinks(entries, dryRun, results) {
+    // Appends missing `Related: @key <link>` blocks to pre-existing
+    // annotations. Cross-library targets can never become Related items,
+    // so the comment link is the only visible connection for them.
+    for (const entry of entries || []) {
+      const targets = entry.related_items || [];
+      if (!targets.length || !entry.clipping_id || !entry.attachment_item_id) continue;
+      const block = "Related: " + targets.map(
+        (target) => `@${target.citation_key} ${target.link || ""}`.trim()
+      ).join(" · ");
+      try {
+        const attachment = Zotero.Items.get(entry.attachment_item_id);
+        if (!attachment) {
+          throw new Error(`Attachment not found: ${entry.attachment_item_id}`);
+        }
+        const annotations = attachment.getAnnotations ? attachment.getAnnotations() : [];
+        const tag = `kindle-id:${entry.clipping_id}`;
+        const existing = (annotations || []).find((annotation) =>
+          this.existingTags(annotation).includes(tag)
+        );
+        if (!existing) continue;
+        const comment = String(existing.annotationComment || "");
+        if (comment.includes(block)) continue;
+        if (dryRun) {
+          results.commentLinksPlanned += 1;
+          continue;
+        }
+        existing.annotationComment = comment ? `${comment}\n\n${block}` : block;
+        await this.saveExistingAnnotation(existing);
+        results.commentLinksAdded += 1;
+      } catch (error) {
+        Zotero.logError(error);
+        results.relationFailures.push({
+          parent_item_id: entry.parent_item_id,
+          related_item_id: (targets[0] || {}).item_id,
+          citation_key: (targets[0] || {}).citation_key,
+          message: `comment link: ${error}`,
+        });
+      }
+    }
+  },
+
   async reconcileWriterState(path, plan, results) {
     const plannedIds = new Set((plan.annotations || []).map((entry) => entry.clipping_id));
     const failedIds = new Set(
@@ -861,6 +1273,12 @@ var KindleZoteroImporter = {
       blockedRecreateMissingTag: 0,
       recreateDeclined: 0,
       removedDuplicates: 0,
+      relationsAdded: 0,
+      relationsSkipped: 0,
+      relationsPlanned: 0,
+      commentLinksAdded: 0,
+      commentLinksPlanned: 0,
+      relationFailures: [],
       deletedForIncremental: 0,
       failedDeletionIds: [],
       maintenanceDeletedIds: [],
@@ -1045,6 +1463,14 @@ var KindleZoteroImporter = {
       }
     }
 
+    const currentIDs = new Set((plan.annotations || []).map((entry) => entry.clipping_id));
+    const relationEntries = (plan.all_annotations || []).filter(
+      (entry) => !currentIDs.has(entry.clipping_id)
+    );
+    relationEntries.push(...successfulEntries.values());
+    await this.addRelatedItemRelations(relationEntries, dryRun, results);
+    await this.backfillRelationLinks(relationEntries, dryRun, results);
+
     if (!dryRun && plan.deletions && plan.deletions.length) {
       const deletionIds = new Set(plan.deletions);
       const alreadyDeletedIds = new Set(results.maintenanceDeletedIds);
@@ -1146,7 +1572,7 @@ function uninstall(_data, _reason) {}
 
 async function startup(data, _reason) {
   try {
-    await KindleZoteroImporter.startup(data);
+    await Kanzi.startup(data);
   } catch (error) {
     Zotero.logError(error);
   }
@@ -1154,7 +1580,7 @@ async function startup(data, _reason) {
 
 function shutdown(_data, _reason) {
   try {
-    KindleZoteroImporter.shutdown();
+    Kanzi.shutdown();
   } catch (error) {
     Zotero.logError(error);
   }
@@ -1162,7 +1588,7 @@ function shutdown(_data, _reason) {
 
 function onMainWindowLoad({ window }) {
   try {
-    KindleZoteroImporter.onMainWindowLoad(window);
+    Kanzi.onMainWindowLoad(window);
   } catch (error) {
     Zotero.logError(error);
   }
@@ -1170,7 +1596,7 @@ function onMainWindowLoad({ window }) {
 
 function onMainWindowUnload({ window }) {
   try {
-    KindleZoteroImporter.onMainWindowUnload(window);
+    Kanzi.onMainWindowUnload(window);
   } catch (error) {
     Zotero.logError(error);
   }

@@ -1,0 +1,15 @@
+Kanzi Dummy EPUB
+- Your Highlight on page 1 | location 100-120 | Added on Tuesday, 18 May 2021 14:18:13
+
+This is a test highlight long enough to import for EPUB.
+==========
+Kanzi Dummy PDF
+- Your Highlight on page 2 | location 200-220 | Added on Tuesday, 18 May 2021 14:20:00
+
+This is a test highlight long enough to import for PDF.
+==========
+Unknown Book Title XYZ
+- Your Highlight on page 1 | location 10-11 | Added on Tuesday, 18 May 2021 14:18:13
+
+This should land in Conflicts for manual mapping.
+==========

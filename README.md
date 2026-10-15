@@ -17,16 +17,39 @@ Import Kindle `My Clippings.txt` highlights into Zotero as native annotations, d
 2. In Zotero: `Tools` → `Plugins` → `gear` → `Install Plugin From File…` → pick the `.xpi` → restart Zotero.
 3. `Tools` → `Kanzi…` to open the manager.
 
-Works with Zotero 7 to 10. Kanzi packages its importer source, but requires Python 3.11 or newer on the host. EPUB imports need no external positioning tools. PDF imports additionally require Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`); `qpdf` is recommended for encrypted PDFs. macOS and Linux are tested. Windows requires setting the full Python executable path in `Settings` and installing the PDF tools separately.
+Works with Zotero 7 to 10. Kanzi packages its importer source, but requires Python 3.11 or newer on the host. EPUB imports need no external positioning tools. PDF imports additionally require Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`); `qpdf` is recommended for encrypted PDFs. Kanzi detects standard Python installations automatically on macOS, Linux and Windows.
+
+## Windows
+
+Open PowerShell and install the host tools:
+
+```powershell
+winget install --id Python.Python.3.13 --exact
+winget install --id oschwartz10612.Poppler --exact
+winget install --id QPDF.QPDF --exact  # Optional: handles copy-protected PDFs
+```
+
+Fully quit and reopen Zotero after installation so it receives the updated `PATH`, then install `kanzi.xpi` and open `Tools` → `Kanzi…`. Kanzi checks standard per-user and system Python locations as well as `PATH`; you should not need to enter an executable path manually. EPUB-only imports require Python but not Poppler.
+
+To verify the installation in a new PowerShell window:
+
+```powershell
+python --version
+pdftotext -v
+pdftohtml -v
+pdfinfo -v
+qpdf --version  # Optional
+```
 
 # Use
 
 1. **Choose your file.** Click `Choose My Clippings.txt` and pick your *cumulative* `My Clippings.txt` from Kindle (`Documents/My Clippings.txt`). Keep the window open. You will see live progress.
-2. **Check Integrated.** After the run, `Integrated` shows what was imported. Columns are `Highlight Text`, `Citekey`, `Added On`, `Integrated` and `Page`. Use the filter to find anything.
-3. **Fix Conflicts.** If a Kindle title did not match a Zotero item, `Conflicts` shows it with up to three suggestions `citekey · title (score%)`. Click `Use` on the right one. Or type any citation key, Zotero key or item ID under `Use Custom`. Or `Ignore Title` to skip it forever. If you map `chabot2013` for one `Simondon` variant, it will offer to apply the same mapping to the other variants with that candidate.
-4. **Re-import.** After you have fixed one or more titles, click `Re-import with saved overrides`. It reuses the last file, or asks for it. Only new or changed highlights are repositioned. Already integrated ones are skipped, so the second run is fast. Use `Retry unresolved attachments and positions` for prior failures without rebuilding successful annotations. Tick `Full re-import from scratch` only if you want to rebuild everything.
-5. **Mappings.** See all titles you have approved or ignored, newest first, with date. Use `Delete` to send any entry back to `Conflicts` for rematching.
-6. **Settings and Artifacts.** Change `Python` or `Zotero DB` paths and `Save Settings`. Or use `Open` or `Reveal` for any generated file, such as `mismatch-review.md` or `match-overrides.json`.
+2. **Review before writing.** New highlights are grouped by title and selected by default. Untick individual highlights or whole titles, then press `Integrate selected`. Skipped highlights return on the next run. `Cancel` and closing the manager write nothing to Zotero and do not mark pending highlights as integrated.
+3. **Check Integrated.** After integration, `Integrated` shows what was imported. Columns are `Highlight Text`, `Citekey`, `Added On`, `Integrated` and `Page`. Use the filter to find anything.
+4. **Fix Conflicts.** If a Kindle title did not match a Zotero item, `Conflicts` shows one expandable row for that title with up to three suggestions `citekey · title (score%)`. Expand it to inspect individual highlights and positioning problems. Click `Use` on the right candidate, enter a citation key, Zotero key or item ID under `Use Custom`, or choose `Ignore Title`. Tables can be sorted and resized.
+5. **Re-import.** After you have fixed one or more titles, click `Re-import with saved overrides`. It reuses the last file, or asks for it. Only new, changed, deferred or removed highlights are processed. Already integrated ones are skipped, so the second run is fast. Use `Retry unresolved attachments and positions` for prior failures without rebuilding successful annotations. Tick `Full re-import from scratch` only if you want to rebuild everything.
+6. **Mappings.** See all titles you have approved or ignored, newest first, with date. Use `Delete` to send any entry back to `Conflicts` for rematching.
+7. **Settings and Artifacts.** Change `Python` or `Zotero DB` paths and `Save Settings`. Or use `Open` or `Reveal` for any generated file, such as `mismatch-review.md` or `match-overrides.json`.
 
 Your choices are saved in `match-overrides.json` in Kanzi's private runtime folder inside your Zotero profile. Back it up or delete an entry to undo a mapping; it is excluded from Git because it contains your document titles.
 
@@ -62,11 +85,11 @@ Both `[o]` and `[orange]` work, case is not sensitive, and space after the brack
 
 `Tools` → `Kanzi…` opens the manager.
 
-**Summary.** Shows `clippings`, `unique titles`, `final annotations` and `conflicts`. Also `Match Statuses` and `Plan Statuses`. The run panel shows `Choose My Clippings.txt`, progress, stage and detail, and the `Full re-import` checkbox.
+**Summary.** Shows `clippings`, `unique titles`, `final annotations` and `conflicts`. Also `Match Statuses` and `Plan Statuses`. The run panel shows `Choose My Clippings.txt`, progress, stage and detail, and the `Full re-import` checkbox. After positioning, the pending review lets you select exactly what is written to Zotero.
 
 **Integrated.** All annotations remembered in `import-plan.final.json`. Columns are `Kindle Title`, `Citekey`, `Highlight Text`, `Added On`, `Integrated` and `Page` with colour swatch. Filter at the top right; results are resizable and paginated.
 
-**Conflicts.** Unresolved titles. Type is `Title match`, `Override suggestion` or `Attachment/position`. `Candidates` shows `N suggestion(s) — top: citekey (score%)`. Each candidate has a `Use` button. Below that is `Use Custom` and `Ignore Title`. Saving shows the `Re-import` bar. If you use `chabot2013` for one Simondon variant, it offers to apply to other variants with the same candidate.
+**Conflicts.** One row per unresolved Kindle title, combining title-match and attachment/position statuses. Expand a row to inspect its highlights and positioning problems. `Candidates` shows `N suggestion(s) — top: citekey (score%)`. Each candidate has a `Use` button. Below that is `Use Custom` and `Ignore Title`. Saving shows the `Re-import` bar. Columns are sortable and resizable.
 
 **Mappings.** Persistent `match-overrides.json`. Columns are `Kindle Title`, `Resolution`, `Status`, `Count` and `Updated`. Use `Delete` to send it back to `Conflicts`. Filterable.
 

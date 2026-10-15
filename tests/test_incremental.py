@@ -6,7 +6,11 @@ from kindle_zotero_importer import cli
 from kindle_zotero_importer.cli import (
     _add_previous_imported_comments,
     _changed_note_clipping_ids,
+    _changed_override_titles,
+    _clipping_ids_for_titles,
+    _deferred_clipping_ids,
     _deletion_ids,
+    _discarded_clipping_ids,
     _merge_annotation_history,
     _merge_positioned_history,
     _unresolved_clipping_ids,
@@ -76,6 +80,114 @@ def test_deletions_include_removed_and_previous_failures():
         {"kept"},
         {"delete_failed_ids": ["retry"]},
     ) == {"removed", "retry"}
+
+
+def test_deferred_clippings_are_reprocessed_while_they_remain_in_source():
+    previous = {"deferred_clipping_ids": ["retry", "removed"]}
+
+    assert _deferred_clipping_ids(previous, {"retry", "current"}) == {"retry"}
+
+
+def test_discarded_clips_never_requeue_and_skips_are_not_unresolved():
+    previous = {"discarded_clipping_ids": ["gone", "removed"]}
+    assert _discarded_clipping_ids(previous, {"gone", "current"}) == {"gone"}
+
+    plan = {
+        "items": [
+            {"clipping": {"id": "note"}, "status": "pdf-position-skipped-non-highlight"},
+            {"clipping": {"id": "fail"}, "status": "pdf-text-not-found"},
+            {"clipping": {"id": "done"}, "status": "positioned"},
+        ]
+    }
+    assert _unresolved_clipping_ids(plan, {"note", "fail", "done"}) == {"fail"}
+
+
+def test_alternate_attachment_retry_prefers_pdf_when_epub_misses():
+    from kindle_zotero_importer.cli import _reattempt_failed_with_alternate_attachments
+    from kindle_zotero_importer.epub_position import add_epub_positions
+    from kindle_zotero_importer.import_plan import build_import_plan
+    from kindle_zotero_importer.pdf_position import add_pdf_positions
+
+    fixtures = Path(__file__).parent / "fixtures" / "windows-smoke"
+    epub_path = str(fixtures / "kanzi-dummy.epub")
+    pdf_path = str(fixtures / "kanzi-dummy.pdf")
+    quote = "This is a test highlight long enough to import for PDF."
+    clippings_payload = {
+        "format": "kindle-zotero-importer.clippings.v1",
+        "clippings": [
+            {
+                "id": "q1",
+                "title": "Dummy Book",
+                "kind": "highlight",
+                "text": quote,
+                "page": None,
+                "location": "100",
+            }
+        ],
+    }
+    zotero_index = {
+        "format": "index",
+        "items": [
+            {
+                "item_id": 1,
+                "key": "ABC12345",
+                "title": "Dummy Book",
+                "fields": {},
+                "attachments": [
+                    {
+                        "item_id": 11,
+                        "key": "EPUBKEY1",
+                        "title": "epub",
+                        "content_type": "application/epub+zip",
+                        "path": epub_path,
+                        "resolved_path": epub_path,
+                    },
+                    {
+                        "item_id": 12,
+                        "key": "PDFKEY123",
+                        "title": "pdf",
+                        "content_type": "application/pdf",
+                        "path": pdf_path,
+                        "resolved_path": pdf_path,
+                    },
+                ],
+            }
+        ],
+    }
+    match_report = {
+        "format": "matches",
+        "matches": [
+            {
+                "clipping_title": "Dummy Book",
+                "status": "matched",
+                "candidates": [{"item_id": 1}],
+            }
+        ],
+    }
+    plan = build_import_plan(clippings_payload, zotero_index, match_report, None)
+    assert plan["items"][0]["zotero"]["attachment"]["content_type"] == "application/epub+zip"
+    positioned = add_pdf_positions(add_epub_positions(plan))
+    assert positioned["items"][0]["status"] == "positioned"
+    assert "partial-text-match" in positioned["items"][0]["problems"]
+    rescued = _reattempt_failed_with_alternate_attachments(positioned)
+    assert rescued["items"][0]["status"] == "positioned"
+    assert "positioned-via-alternate-attachment" in rescued["items"][0]["problems"]
+    assert "partial-text-match" not in rescued["items"][0]["problems"]
+
+
+def test_changed_override_requeues_every_clipping_for_exact_title():
+    previous = {"Shared title": {"citation_key": "old"}}
+    current = {"Shared title": {"citation_key": "new"}}
+    clippings = [
+        {"id": "first", "title": "Shared title"},
+        {"id": "second", "title": "Shared title"},
+        {"id": "third", "title": "Different title"},
+    ]
+
+    changed_titles = _changed_override_titles(previous, current)
+
+    assert changed_titles == {"Shared title"}
+    assert _clipping_ids_for_titles(clippings, changed_titles) == {"first", "second"}
 
 
 def test_previous_imported_comment_is_attached_to_reprocessed_entry():
@@ -240,6 +352,6 @@ def test_noop_incremental_writes_complete_artifacts():
         assert result == 0
         final_plan = json.loads((workdir / "import-plan.final.json").read_text())
         assert final_plan["annotations"] == []
-        assert final_plan["all_annotations"] == [annotation]
+        assert final_plan["all_annotations"] == [{**annotation, "related_items": []}]
         assert final_plan["delta_annotation_count"] == 0
         assert (workdir / "import-plan.epub.json").exists()

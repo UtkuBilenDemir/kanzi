@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -8,7 +9,12 @@ from pathlib import Path
 from .clippings import clippings_to_jsonable, load_clippings
 from .epub_position import add_epub_positions
 from .final_plan import FINAL_FORMAT, build_final_writer_plan
-from .import_plan import DEFAULT_COLOUR_MAP, _attach_notes_to_highlights, build_import_plan
+from .import_plan import (
+    DEFAULT_COLOUR_MAP,
+    _attach_notes_to_highlights,
+    _related_items_for_citekeys,
+    build_import_plan,
+)
 from .matcher import build_match_report, load_json
 from .mismatch_review import build_mismatch_review
 from .overrides import generate_override_skeleton, load_overrides
@@ -65,6 +71,20 @@ def _merge_annotation_history(
     )
 
 
+def _refresh_history_relations(
+    annotations: list[dict], zotero_index: dict
+) -> None:
+    """Resolve citekeys for old annotations without re-positioning them."""
+    items_by_id = {item["item_id"]: item for item in zotero_index.get("items", [])}
+    for entry in annotations:
+        annotation = entry.get("annotation") or {}
+        entry["related_items"] = _related_items_for_citekeys(
+            (annotation.get("text") or "", annotation.get("comment") or ""),
+            entry.get("parent_item_id"),
+            items_by_id,
+        )
+
+
 def _changed_note_clipping_ids(
     current_clippings: list[dict], previous_annotations: list[dict]
 ) -> set[str]:
@@ -112,6 +132,137 @@ def _deletion_ids(
     return deleted
 
 
+def _deferred_clipping_ids(
+    previous_plan: dict | None, current_ids: set[str]
+) -> set[str]:
+    return {
+        clipping_id
+        for clipping_id in (previous_plan or {}).get("deferred_clipping_ids", [])
+        if clipping_id in current_ids
+    }
+
+
+def _discarded_clipping_ids(
+    previous_plan: dict | None, current_ids: set[str]
+) -> set[str]:
+    """Clips the user permanently discarded in Conflicts (e.g. standalone notes)."""
+    return {
+        clipping_id
+        for clipping_id in (previous_plan or {}).get("discarded_clipping_ids", [])
+        if clipping_id in current_ids
+    }
+
+
+def _changed_override_titles(
+    previous_snapshot: dict | None, current_overrides: dict
+) -> set[str]:
+    if previous_snapshot is None:
+        return set(current_overrides)
+    return {
+        title
+        for title in set(previous_snapshot) | set(current_overrides)
+        if previous_snapshot.get(title) != current_overrides.get(title)
+    }
+
+
+def _clipping_ids_for_titles(
+    clippings: list[dict], titles: set[str]
+) -> set[str]:
+    return {clipping["id"] for clipping in clippings if clipping["title"] in titles}
+
+
+def _reattempt_failed_with_alternate_attachments(positioned_plan: dict) -> dict:
+    """Retry text/rect failures against another attachment of the same item.
+
+    `_choose_attachment` commits to one file (e.g. the sole EPUB) without
+    comparing text. When that file lacks the quote but a sibling PDF/EPUB
+    has it (e.g. Dostoyevsky EPUB vs PDF), re-anchor the clone there and
+    keep the winner, tagged `positioned-via-alternate-attachment`.
+    Partial shingle anchors are also upgraded when a sibling holds the
+    full quote.
+    """
+    retryable = {"epub-text-not-found", "pdf-text-not-found", "pdf-rects-not-found"}
+    retries: list[dict] = []
+    upgrade_ids: set[str] = set()
+    for item in positioned_plan.get("items", []):
+        if item.get("status") in retryable:
+            pass
+        elif item.get("status") == "positioned" and "partial-text-match" in (
+            item.get("problems") or []
+        ):
+            clipping_id = (item.get("clipping") or {}).get("id")
+            if clipping_id:
+                upgrade_ids.add(clipping_id)
+        else:
+            continue
+        zotero = item.get("zotero") or {}
+        current = zotero.get("attachment") or {}
+        choices = zotero.get("attachment_choices") or []
+        alternates = [
+            choice
+            for choice in choices
+            if choice.get("item_id") != current.get("item_id")
+        ]
+        if not alternates:
+            continue
+        alternates.sort(
+            key=lambda choice: 0
+            if choice.get("content_type") != current.get("content_type")
+            else 1
+        )
+        clone = copy.deepcopy(item)
+        clone_zotero = dict(clone.get("zotero") or {})
+        clone_zotero["attachment"] = alternates[0]
+        clone["zotero"] = clone_zotero
+        clone["status"] = "ready-for-positioning"
+        clone["problems"] = []
+        retries.append(clone)
+    if not retries:
+        return positioned_plan
+    mini = {"format": positioned_plan.get("format"), "items": retries}
+    mini = add_epub_positions(mini)
+    mini = add_pdf_positions(mini)
+    winners = {}
+    for attempt in mini.get("items", []):
+        clipping_id = (attempt.get("clipping") or {}).get("id")
+        if clipping_id and attempt.get("status") == "positioned":
+            winners[clipping_id] = attempt
+    if not winners:
+        return positioned_plan
+    merged = []
+    for item in positioned_plan.get("items", []):
+        clipping_id = (item.get("clipping") or {}).get("id")
+        if clipping_id in winners:
+            won = winners[clipping_id]
+            if clipping_id in upgrade_ids and "partial-text-match" in (
+                won.get("problems") or []
+            ):
+                merged.append(item)
+                continue
+            won = dict(won)
+            carried = [
+                problem
+                for problem in item.get("problems", [])
+                if problem != "partial-text-match"
+                or "partial-text-match" in (won.get("problems") or [])
+            ]
+            won["problems"] = [
+                *carried,
+                "positioned-via-alternate-attachment",
+            ]
+            merged.append(won)
+        else:
+            merged.append(item)
+    updated = dict(positioned_plan)
+    updated["items"] = merged
+    status_counts: dict[str, int] = {}
+    for entry in merged:
+        status = entry.get("status", "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    updated["status_counts"] = status_counts
+    return updated
+
+
 def _add_previous_imported_comments(
     annotations: list[dict], previous_plan: dict | None
 ) -> None:
@@ -134,7 +285,12 @@ def _unresolved_clipping_ids(
     return {
         item.get("clipping", {}).get("id")
         for item in (previous_plan or {}).get("items", [])
-        if item.get("status") not in {"positioned", "ignored-title"}
+        if item.get("status") not in {
+            "positioned",
+            "ignored-title",
+            "pdf-position-skipped-non-highlight",
+            "epub-position-skipped-non-highlight",
+        }
         and item.get("clipping", {}).get("id") in source_ids
     }
 
@@ -535,18 +691,12 @@ def main(argv: list[str] | None = None) -> int:
                 _ov_for_inc = load_overrides(load_json(str(overrides_path))) if overrides_path.exists() else {}
             except Exception:
                 _ov_for_inc = {}
-            previous_override_snapshot = (prev_final_plan or {}).get("overrides_snapshot")
-            if previous_override_snapshot is None:
-                changed_override_titles = set(_ov_for_inc)
-            else:
-                changed_override_titles = {
-                    title
-                    for title in set(previous_override_snapshot) | set(_ov_for_inc)
-                    if previous_override_snapshot.get(title) != _ov_for_inc.get(title)
-                }
-            for c in effective_clippings:
-                if c["title"] in changed_override_titles:
-                    to_process_ids.add(c["id"])
+            changed_override_titles = _changed_override_titles(
+                (prev_final_plan or {}).get("overrides_snapshot"), _ov_for_inc
+            )
+            to_process_ids.update(
+                _clipping_ids_for_titles(effective_clippings, changed_override_titles)
+            )
             previous_annotations = (prev_final_plan or {}).get("all_annotations") or (prev_final_plan or {}).get("annotations", [])
             for annotation in previous_annotations:
                 if annotation.get("clipping_title") in changed_override_titles and annotation.get("clipping_id"):
@@ -563,10 +713,15 @@ def main(argv: list[str] | None = None) -> int:
                 for clipping_id in (prev_final_plan or {}).get("write_failed_ids", [])
                 if clipping_id in new_ids
             )
+            to_process_ids.update(_deferred_clipping_ids(prev_final_plan, new_ids))
             if args.retry_unresolved and prev_positioned_plan:
                 to_process_ids.update(
                     _unresolved_clipping_ids(prev_positioned_plan, new_ids)
                 )
+            # Permanently discarded clips (user action in Conflicts) never re-queue.
+            to_process_ids.difference_update(
+                _discarded_clipping_ids(prev_final_plan, new_ids)
+            )
             # If colourMap itself changed since last run, re-queue all prev integrated (so Settings change recolours)
             try:
                 prev_map = (prev_final_plan or {}).get("colourMap") or (prev_final_plan or {}).get("colorMap")
@@ -632,6 +787,7 @@ def main(argv: list[str] | None = None) -> int:
                 epub_plan = add_epub_positions(plan)
                 report_progress(55, "Positioning PDF highlights", "Locating highlights in PDF files (incremental)")
                 positioned_plan = add_pdf_positions(epub_plan)
+                positioned_plan = _reattempt_failed_with_alternate_attachments(positioned_plan)
                 report_progress(90, "Finalizing", "Preparing Zotero annotations and mismatch report")
                 final_plan = build_final_writer_plan(positioned_plan)
                 # Attach deletions for writer
@@ -665,6 +821,7 @@ def main(argv: list[str] | None = None) -> int:
             epub_plan = add_epub_positions(plan)
             report_progress(55, "Positioning PDF highlights", "Locating highlights in PDF files; this is usually the longest stage")
             positioned_plan = add_pdf_positions(epub_plan)
+            positioned_plan = _reattempt_failed_with_alternate_attachments(positioned_plan)
             report_progress(90, "Finalizing", "Preparing Zotero annotations and mismatch report")
             final_plan = build_final_writer_plan(positioned_plan)
             final_plan["deletions"] = sorted(
@@ -700,10 +857,14 @@ def main(argv: list[str] | None = None) -> int:
                 final_plan.get("annotations", []),
                 final_plan.get("deletions", []),
             )
+        _refresh_history_relations(final_plan["all_annotations"], zotero_index)
         final_plan["annotation_count"] = len(final_plan["all_annotations"])
         final_plan["delta_annotation_count"] = delta_annotation_count
         final_plan["processed_clipping_ids"] = sorted(new_ids)
         final_plan["overrides_snapshot"] = overrides or {}
+        final_plan["discarded_clipping_ids"] = sorted(
+            _discarded_clipping_ids(prev_final_plan, new_ids)
+        )
 
         indent = 2 if args.pretty else None
         outputs = {

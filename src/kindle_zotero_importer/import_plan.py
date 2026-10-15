@@ -124,6 +124,12 @@ def _plan_clipping(
         zotero_item, overrides_by_title.get(clipping["title"]) or {}
     )
     status = "ready-for-positioning" if attachment else attachment_status
+    stub = _annotation_stub(clipping, colour_map) if attachment else None
+    related_items = (
+        _append_citekey_links(stub, clipping, zotero_item, items_by_id)
+        if stub
+        else []
+    )
     return {
         "clipping": clipping,
         "status": status,
@@ -138,15 +144,94 @@ def _plan_clipping(
             "issn": zotero_item["fields"].get("ISSN") if "ISSN" in zotero_item["fields"] else None,
             "url": zotero_item["fields"].get("url"),
             "publication_title": zotero_item["fields"].get("publicationTitle"),
+            "related_items": related_items,
             "attachment": attachment,
             "attachment_choices": zotero_item.get("attachments", []),
             "expected_attachment_type": _expected_attachment_type(
                 clipping, zotero_item.get("attachments", [])
             ),
         },
-        "annotation": _annotation_stub(clipping, colour_map) if attachment else None,
+        "annotation": stub,
         "problems": problems,
     }
+
+
+def _append_citekey_links(
+    stub: dict[str, Any],
+    clipping: dict[str, Any],
+    parent_item: dict[str, Any],
+    items_by_id: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Turn `@citekey` mentions into clickable Zotero item links.
+
+    Kindle-side `@key` tokens (Obsidian-style) resolve against the library
+    index; matches to *other* items are appended to the annotation comment
+    as `zotero://select` links, which Zotero renders clickable. Self-links
+    to the parent item are skipped.
+    """
+    related_items = _related_items_for_citekeys(
+        (clipping.get("text") or "", clipping.get("comment") or ""),
+        parent_item.get("item_id"),
+        items_by_id,
+    )
+    links = [
+        f"@{target['citation_key']} {target['link']}" for target in related_items
+    ]
+    if not links:
+        return []
+    existing = stub.get("comment") or ""
+    block = "Related: " + " · ".join(links)
+    if block not in existing:
+        stub["comment"] = f"{existing}\n\n{block}" if existing else block
+    return related_items
+
+
+def _select_link(item: dict[str, Any]) -> str:
+    """Library-aware `zotero://select` link for an indexed item.
+
+    Group-library targets need the `/groups/{groupID}/items/{key}` form;
+    personal-library (or unknown) targets use `/library/items/{key}`.
+    """
+    group_id = item.get("group_id")
+    if group_id:
+        return f"zotero://select/groups/{group_id}/items/{item['key']}"
+    return f"zotero://select/library/items/{item['key']}"
+
+
+def _related_items_for_citekeys(
+    sources: tuple[str, ...],
+    parent_item_id: int | None,
+    items_by_id: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    tokens = {
+        token.casefold()
+        for source in sources
+        for token in re.findall(r"@([A-Za-z0-9_][\w:.-]*)", source or "")
+    }
+    if not tokens:
+        return []
+    by_citekey = {
+        str(item.get("fields", {}).get("citationKey", "")).casefold(): item
+        for item in items_by_id.values()
+        if item.get("fields", {}).get("citationKey")
+    }
+    related = []
+    seen_item_ids = set()
+    for token in sorted(tokens):
+        target = by_citekey.get(token)
+        target_id = target.get("item_id") if target else None
+        if not target or target_id == parent_item_id or target_id in seen_item_ids:
+            continue
+        seen_item_ids.add(target_id)
+        related.append(
+            {
+                "item_id": target_id,
+                "key": target["key"],
+                "citation_key": target["fields"]["citationKey"],
+                "link": _select_link(target),
+            }
+        )
+    return related
 
 
 def _choose_attachment(

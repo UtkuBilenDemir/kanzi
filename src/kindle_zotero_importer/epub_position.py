@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
 import posixpath
+import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import Any
@@ -68,6 +69,8 @@ def _position_item(
     annotation["sortIndex"] = position["sortIndex"]
     updated["annotation"] = annotation
     updated["status"] = "positioned"
+    if position.get("partial"):
+        updated["problems"] = [*item.get("problems", []), "partial-text-match"]
     return updated
 
 
@@ -104,11 +107,42 @@ def find_epub_cfi(text_nodes: list[TextNode], quote: str) -> dict[str, Any] | No
         return None
 
     match_start = normalized_haystack.find(normalized_quote)
-    if match_start < 0:
+    raw_start: int | None = None
+    raw_end: int | None = None
+    partial = False
+    if match_start >= 0:
+        match_end = match_start + len(normalized_quote)
+        raw_start = haystack_map[match_start]
+        raw_end = haystack_map[match_end - 1] + 1
+    else:
+        stripped_quote, _ = _strip_with_map(normalized_quote)
+        if stripped_quote and len(stripped_quote) >= 20:
+            stripped_haystack, stripped_map = _strip_with_map(normalized_haystack)
+            strip_start = stripped_haystack.find(stripped_quote)
+            strip_len = len(stripped_quote)
+            if strip_start < 0:
+                hit = _partial_stripped_range(stripped_haystack, stripped_quote)
+                if hit is not None:
+                    strip_start, strip_end = hit
+                    strip_len = strip_end - strip_start
+                    partial = True
+            if strip_start >= 0:
+                # stripped_map points into normalized_haystack;
+                # convert via haystack_map back to raw haystack offsets.
+                norm_start = stripped_map[strip_start]
+                norm_end = stripped_map[strip_start + strip_len - 1]
+                raw_start = haystack_map[norm_start]
+                raw_end = haystack_map[norm_end] + 1
+            else:
+                span = _shingle_span(normalized_haystack, _quote_words(normalized_quote))
+                if span is not None:
+                    raw_start = haystack_map[span[0]]
+                    raw_end = haystack_map[span[1] - 1] + 1
+                    partial = True
+        else:
+            partial = False
+    if raw_start is None or raw_end is None:
         return None
-    match_end = match_start + len(normalized_quote)
-    raw_start = haystack_map[match_start]
-    raw_end = haystack_map[match_end - 1] + 1
 
     # Account for the spaces inserted between text nodes in haystack construction.
     adjusted_nodes = _nodes_for_joined_text(text_nodes)
@@ -139,6 +173,7 @@ def find_epub_cfi(text_nodes: list[TextNode], quote: str) -> dict[str, Any] | No
             "value": value,
         },
         "sortIndex": f"{spine_step:05d}|{raw_start:08d}",
+        "partial": partial,
     }
 
 
@@ -213,6 +248,11 @@ def _clean_text(text: str) -> str:
 
 
 def _normalize_with_map(text: str) -> tuple[str, list[int]]:
+    text = unicodedata.normalize("NFKC", text)
+    text = (
+        text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+        .replace("–", "-").replace("—", "-").replace("\xa0", " ").replace("\xad", "")
+    )
     normalized = []
     mapping = []
     last_was_space = False
@@ -230,6 +270,58 @@ def _normalize_with_map(text: str) -> tuple[str, list[int]]:
         normalized.pop()
         mapping.pop()
     return "".join(normalized), mapping
+
+
+def _strip_with_map(text: str) -> tuple[str, list[int]]:
+    text = unicodedata.normalize("NFKC", text).casefold()
+    stripped: list[str] = []
+    mapping: list[int] = []
+    for index, char in enumerate(text):
+        if char.isalnum():
+            stripped.append(char)
+            mapping.append(index)
+    return "".join(stripped), mapping
+
+
+def _partial_stripped_range(
+    haystack: str, quote: str, min_len: int = 30
+) -> tuple[int, int] | None:
+    if len(quote) < min_len * 2:
+        return None
+    mid = len(quote) // 2
+    for part in (quote[:mid], quote[mid:]):
+        if len(part) < min_len:
+            continue
+        start = haystack.find(part)
+        if start >= 0:
+            return start, start + len(part)
+    return None
+
+
+def _quote_words(normalized: str) -> list[str]:
+    words: list[str] = []
+    for token in normalized.split():
+        cleaned = "".join(char for char in token if char.isalnum())
+        if cleaned:
+            words.append(cleaned)
+    return words
+
+
+def _shingle_span(
+    normalized_text: str, quote_words: list[str], width: int = 6
+) -> tuple[int, int] | None:
+    first: int | None = None
+    last: int | None = None
+    for start in range(len(quote_words) - width + 1):
+        needle = " ".join(quote_words[start : start + width])
+        at = normalized_text.find(needle)
+        if at >= 0:
+            end = at + len(needle)
+            first = at if first is None else min(first, at)
+            last = end if last is None else max(last, end)
+    if first is None or last is None:
+        return None
+    return first, last
 
 
 def _nodes_for_joined_text(text_nodes: list[TextNode]) -> list[TextNode]:
