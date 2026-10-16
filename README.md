@@ -86,6 +86,12 @@ All codes are single letters and unique:
 
 Both `[o]` and `[orange]` work, case is not sensitive, and space after the bracket is ignored. Change any mapping in `Settings` → `Highlight colours` using the hex picker and preview. Use `+ Add mapping` or `Reset to defaults`. British spelling is used throughout.
 
+# Safety
+
+* Kanzi never writes `zotero.sqlite` directly and never deletes your files. It only reads the database and writes annotations through Zotero's own APIs.
+* Preparing a review changes nothing. Things are written to Zotero only after you press Apply, and only the rows you ticked.
+* Removals and automatic cleanups only ever touch annotations tagged `kindle-import`. Your manual annotations are left alone.
+
 # Tips
 
 * Keep `My Clippings.txt` cumulative. Do not clear it on the Kindle. The importer remembers what is already integrated via `kindle-id:<hash>` tags, so re-imports are incremental.
