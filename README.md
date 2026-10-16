@@ -17,7 +17,19 @@ Import Kindle `My Clippings.txt` highlights into Zotero as native annotations, d
 2. In Zotero: `Tools` → `Plugins` → `gear` → `Install Plugin From File…` → pick the `.xpi` → restart Zotero.
 3. `Tools` → `Kanzi…` to open the manager.
 
-Works with Zotero 7 to 10. Kanzi packages its importer source, but requires Python 3.11 or newer on the host. EPUB imports need no external positioning tools. PDF imports additionally require Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`); `qpdf` is recommended for encrypted PDFs. Kanzi detects standard Python installations automatically on macOS, Linux and Windows.
+Works with Zotero 7 to 10. Kanzi packages its importer source, but requires Python 3.11 or newer on the host. EPUB imports need no external positioning tools. PDF imports additionally require Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`); `qpdf` is recommended for encrypted PDFs. Kanzi detects standard Python installations automatically on macOS, Linux and Windows. EPUB-only imports require Python but not Poppler.
+
+## macOS
+
+```sh
+brew install python poppler qpdf  # qpdf is optional: handles copy-protected PDFs
+```
+
+## Linux (Debian/Ubuntu)
+
+```sh
+sudo apt install python3 poppler-utils qpdf  # qpdf is optional
+```
 
 ## Windows
 
@@ -29,7 +41,7 @@ winget install --id oschwartz10612.Poppler --exact
 winget install --id QPDF.QPDF --exact  # Optional: handles copy-protected PDFs
 ```
 
-Fully quit and reopen Zotero after installation so it receives the updated `PATH`, then install `kanzi.xpi` and open `Tools` → `Kanzi…`. Kanzi checks standard per-user and system Python locations as well as `PATH`; you should not need to enter an executable path manually. EPUB-only imports require Python but not Poppler.
+Windows only: fully quit and reopen Zotero after installation so it receives the updated `PATH`, then install `kanzi.xpi` and open `Tools` → `Kanzi…`. Kanzi checks standard per-user and system Python locations as well as `PATH`; you should not need to enter an executable path manually.
 
 To verify the installation in a new PowerShell window:
 
