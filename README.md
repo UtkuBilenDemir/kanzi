@@ -1,4 +1,13 @@
-# Kanzi - Kindle annotations to Zotero importer
+> [!CAUTION]
+> **This project has been heavily vibecoded.**
+
+# Kanzi - `K`indle `an`notations to `Z`otero `I`mporter
+
+<p align="center">
+
+<a href="https://github.com/sponsors/UtkuBilenDemir"><img src="https://img.shields.io/badge/please%20give%20me%20money+-111111?style=flat-square" alt="please give me money+"></a>
+
+</p>
 
 Kanzi imports highlights and notes from Kindle's cumulative `My Clippings.txt` file as native annotations on PDF and EPUB attachments in Zotero.
 
