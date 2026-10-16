@@ -143,6 +143,28 @@
     #pending-integrate:not(:disabled):hover { background: #1a1a1a; }
     #pending-cancel { width: auto; padding: 10px 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; border-radius: var(--radius); }
     #pending-cancel:hover { background: var(--panel-soft); }
+    .run-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0 0 16px; }
+    .run-step { border-top: 3px solid var(--line); padding-top: 6px; color: var(--faint); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .run-step.active { border-color: var(--accent); color: var(--text); }
+    .run-step.done { border-color: #5b7f62; color: #406047; }
+    .mode-options { display: grid; gap: 6px; margin-top: 12px; }
+    .mode-option { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); font-weight: 400; }
+    .mode-option input { width: auto; margin-top: 3px; }
+    .mode-option strong { display: block; font-size: 12px; }
+    .mode-option span { display: block; color: var(--muted); font-size: 11px; }
+    .review-counts { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+    .review-chip { border: 1px solid var(--line); background: var(--panel-soft); border-radius: 999px; padding: 4px 9px; font-size: 11px; }
+    .review-action { display: inline-block; min-width: 68px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    .review-destination { display: block; color: var(--muted); font-size: 10.5px; font-weight: 400; margin-top: 2px; }
+    .review-section { margin: 14px 0; }
+    .review-operation { display: grid; grid-template-columns: 20px 105px 1fr; gap: 8px; align-items: start; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; margin: 6px 0; font-size: 12px; }
+    .review-operation input { width: auto; margin-top: 3px; }
+    .review-operation.blocked { opacity: .6; background: var(--panel-soft); }
+    .review-warning { display: grid; grid-template-columns: 105px 1fr; gap: 8px; border: 1px solid var(--danger); border-radius: var(--radius); padding: 8px 10px; margin: 6px 0; font-size: 12px; background: var(--danger-soft); }
+    .result-heading { margin-bottom: 4px; font-size: 18px; font-weight: 700; }
+    .result-heading.issues, .result-heading.failed { color: var(--danger); }
+    .result-details { margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: var(--panel); }
+    .result-details summary { cursor: pointer; font-weight: 600; }
     ::selection { background: var(--accent); color: white; }
   </style>
   <script>
@@ -164,6 +186,9 @@
       mappingsPageSize: 50,
       expandedTitles: {},
       pendingPlan: null,
+      reviewModel: null,
+      runPhase: 'prepare',
+      lastRunMode: 'update',
       sortState: {
         titles: { column: 'status', direction: 'asc' },
         conflicts: { column: 'count', direction: 'desc' },
@@ -211,8 +236,22 @@
         }
       },
 
+      setRunPhase(phase) {
+        this.runPhase = phase;
+        const phases = ['prepare', 'review', 'apply', 'results'];
+        const activeIndex = phases.indexOf(phase);
+        for (let index = 0; index < phases.length; index++) {
+          const element = document.getElementById(`run-step-${phases[index]}`);
+          if (!element) continue;
+          element.classList.toggle('active', index === activeIndex);
+          element.classList.toggle('done', index < activeIndex);
+        }
+      },
+
       beginRun(path) {
         this.running = true;
+        this.lastRunMode = this.getRunMode();
+        this.setRunPhase('prepare');
         this.lastClippingsPath = path;
         this.startedAt = Date.now();
         this.hidePendingReview();
@@ -224,7 +263,7 @@
         if (resultsEl) resultsEl.textContent = '';
         const bar = document.getElementById('reimport-bar');
         if (bar) bar.style.display = 'none';
-        this.updateProgress(1, 'Starting import', 'Preparing pipeline');
+        this.updateProgress(1, 'Preparing review', 'Reading your Kindle clippings');
         clearInterval(this.timer);
         this.timer = setInterval(() => this.updateElapsed(), 1000);
       },
@@ -273,6 +312,22 @@
       },
 
       updateProgress(percent, stage, detail) {
+        const stageLabels = {
+          'Starting import': 'Preparing review',
+          'Reading clippings': 'Reading Kindle clippings',
+          'Indexing Zotero': 'Checking Zotero destinations',
+          'Matching titles': 'Matching Kindle titles',
+          'Building plan': 'Building change preview',
+          'Positioning EPUB highlights': 'Locating highlights in EPUB files',
+          'Positioning PDF highlights': 'Locating highlights in PDF files',
+          'Finalizing': 'Building change preview',
+          'Writing annotations': 'Applying changes',
+        };
+        stage = stageLabels[stage] || stage;
+        if (stage === 'Pipeline complete') {
+          stage = 'Building change preview';
+          percent = Math.min(Number(percent) || 0, 90);
+        }
         const prog = document.getElementById('progress');
         if (prog) prog.value = Math.max(0, Math.min(100, Number(percent) || 0));
         const stageEl = document.getElementById('stage');
@@ -287,7 +342,26 @@
         this.running = false;
         clearInterval(this.timer);
         this.hidePendingReview();
-        this.updateProgress(100, 'Import complete', 'Annotations have been checked and saved in Zotero');
+        this.setRunPhase('results');
+        const issues = [
+          ...(results.failed || []),
+          ...(results.relationFailures || []),
+        ];
+        for (const id of results.failedDeletionIds || []) {
+          if (!issues.some(issue => issue.clipping_id === id)) {
+            issues.push({ clipping_id: id, message: 'Deletion could not be completed' });
+          }
+        }
+        if (results.recreateDeclined && !issues.some(issue => String(issue.message || '').includes('Sort-order'))) {
+          issues.push({ message: `${results.recreateDeclined} sort-order recreation(s) were declined` });
+        }
+        const outcome = issues.length ? 'Completed with issues' : 'Completed';
+        const completionDetail = issues.length
+          ? `${issues.length} item(s) need attention`
+          : results.noChanges
+            ? 'Everything is already up to date'
+            : 'All selected changes were applied';
+        this.updateProgress(100, outcome, completionDetail);
         const btn = document.getElementById('run-button');
         if (btn) {
           btn.classList.remove('disabled');
@@ -296,9 +370,18 @@
         const resultsEl = document.getElementById('run-results');
         if (resultsEl) {
           resultsEl.textContent = '';
-          const h2 = document.createElement('h2');
-          h2.textContent = 'Result';
+          const h2 = document.createElement('div');
+          h2.className = `result-heading${issues.length ? ' issues' : ''}`;
+          h2.textContent = outcome;
           resultsEl.appendChild(h2);
+          const summaryText = document.createElement('div');
+          summaryText.className = 'muted';
+          summaryText.textContent = issues.length
+            ? 'Most changes were applied, but some items still need attention. Retrying is safe.'
+            : results.noChanges
+              ? 'No Zotero changes were needed.'
+              : 'All selected changes were applied.';
+          resultsEl.appendChild(summaryText);
           const grid = document.createElement('div');
           grid.className = 'grid';
           const makeCard = (value, label) => {
@@ -313,15 +396,34 @@
             return card;
           };
           grid.appendChild(makeCard(results.created, 'created'));
-          grid.appendChild(makeCard(results.skippedExisting, 'already present'));
-           grid.appendChild(makeCard(results.updatedComments + results.updatedSortIndex, 'updated'));
-           grid.appendChild(makeCard(results.relationsAdded || 0, 'relations added'));
-           grid.appendChild(makeCard(results.commentLinksAdded || 0, 'comment links added'));
-           grid.appendChild(makeCard(results.failed.length, 'failed'));
-           if ((results.relationFailures || []).length) {
-             grid.appendChild(makeCard(results.relationFailures.length, 'relation failures'));
-           }
+          grid.appendChild(makeCard(results.skippedExisting, 'already up to date'));
+          grid.appendChild(makeCard(results.updated || 0, 'updated'));
+          grid.appendChild(makeCard(results.deletedForIncremental || 0, 'removed'));
+          grid.appendChild(makeCard(results.relationsAdded || 0, 'relations added'));
+          grid.appendChild(makeCard(results.commentLinksAdded || 0, 'comment links added'));
+          grid.appendChild(makeCard(issues.length, 'issues'));
           resultsEl.appendChild(grid);
+          if (issues.length) {
+            const details = document.createElement('details');
+            details.className = 'result-details';
+            details.open = true;
+            const summaryNode = document.createElement('summary');
+            summaryNode.textContent = `Show ${issues.length} issue(s)`;
+            details.appendChild(summaryNode);
+            for (const issue of issues) {
+              const row = document.createElement('div');
+              row.className = 'notice err';
+              row.textContent = `${issue.clipping_id ? issue.clipping_id + ': ' : ''}${issue.message || 'Unknown issue'}\nRemedy: prepare a fresh review and retry. Already-applied changes will not be duplicated.`;
+              details.appendChild(row);
+            }
+            resultsEl.appendChild(details);
+            const retry = document.createElement('button');
+            retry.className = 'file-button';
+            retry.style.marginTop = '10px';
+            retry.textContent = 'Prepare a fresh review';
+            retry.addEventListener('click', () => this.retryLastRun());
+            resultsEl.appendChild(retry);
+          }
           const consentVersion = 2;
           let acceptedVersion = 0;
           try { acceptedVersion = Services.prefs.getIntPref("extensions.kindleZoteroImporter.shareConsentVersion"); } catch(e) {}
@@ -340,7 +442,7 @@
         this.refreshMappings();
         const bar = document.getElementById('reimport-bar');
         if (bar) bar.style.display = 'none';
-        this.status(`${summary.counts.final_annotations || 0} positioned annotations processed; ${this.rows.length} review rows remain.`, results.failed.length > 0 || (results.relationFailures || []).length > 0);
+        this.status(`${results.created || 0} created · ${results.updated || 0} updated · ${results.deletedForIncremental || 0} removed · ${issues.length} issues.`, issues.length > 0);
         // Pseudonymous sharing after explicit consent.
         try {
           let share = false;
@@ -384,8 +486,35 @@
         const btn = document.getElementById('run-button');
         if (btn) btn.classList.remove('disabled');
         this.hidePendingReview();
-        this.updateProgress(0, 'Import failed', message);
-        this.status(message, true);
+        this.setRunPhase('results');
+        this.updateProgress(0, 'Failed', 'Kanzi could not finish this run. Retrying is safe.');
+        const resultsEl = document.getElementById('run-results');
+        if (resultsEl) {
+          resultsEl.textContent = '';
+          const heading = document.createElement('div');
+          heading.className = 'result-heading failed';
+          heading.textContent = 'Failed';
+          resultsEl.appendChild(heading);
+          const explanation = document.createElement('div');
+          explanation.textContent = 'Kanzi could not finish. Some approved changes may already be present; preparing again is safe and will not duplicate them.';
+          resultsEl.appendChild(explanation);
+          const details = document.createElement('details');
+          details.className = 'result-details';
+          const summaryNode = document.createElement('summary');
+          summaryNode.textContent = 'Technical details';
+          details.appendChild(summaryNode);
+          const pre = document.createElement('pre');
+          pre.textContent = message;
+          details.appendChild(pre);
+          resultsEl.appendChild(details);
+        }
+        this.status('Run failed. Open Technical details, fix the cause, then prepare again.', true);
+      },
+
+      async retryLastRun() {
+        if (!this.lastClippingsPath || this.running) return;
+        const flags = this.runModeFlags(this.lastRunMode);
+        await this.plugin.runManagedImportWithPath(this, this.lastClippingsPath, flags.full, flags.retry);
       },
 
       cancelRun(message) {
@@ -393,27 +522,34 @@
         clearInterval(this.timer);
         const btn = document.getElementById('run-button');
         if (btn) btn.classList.remove('disabled');
+        this.setRunPhase('prepare');
         this.updateProgress(0, 'Ready', message || 'Cancelled.');
         this.status(message || 'Cancelled.', false);
       },
 
-      // Pure helper (tested): group pending delta annotations by title.
+      // Pure helper (tested): keep source titles separate even if destinations match.
       groupPendingAnnotations(annotations) {
         const byKey = new Map();
         for (const a of annotations || []) {
-          const key = a.citation_key || a.clipping_title || '(missing title)';
+          const clippingTitle = a.clipping_title || a.clippingTitle || '(missing title)';
+          const destination = a.destination || {};
+          const key = `${clippingTitle}\u0000${destination.libraryID || a.library_id || ''}:${destination.itemID || a.parent_item_id || ''}`;
           if (!byKey.has(key)) {
             byKey.set(key, {
-              key, title: a.clipping_title || key,
-              citationKey: a.citation_key || '',
+              key, title: clippingTitle,
+              citationKey: destination.citationKey || a.citation_key || '',
+              destination,
               items: [],
             });
           }
           byKey.get(key).items.push({
-            id: a.clipping_id,
-            text: a.annotation?.text || '',
-            page: a.annotation?.pageLabel || '',
-            color: a.annotation?.color || '#ffd400',
+            id: a.clipping_id || a.clippingId,
+            operationId: a.operation_id || `annotation:${a.clipping_id}`,
+            kind: a.kind || 'add',
+            changes: a.changes || [],
+            text: a.text || a.annotation?.text || '',
+            page: a.page || a.annotation?.pageLabel || '',
+            color: a.color || a.annotation?.color || '#ffd400',
           });
         }
         const groups = [...byKey.values()];
@@ -421,22 +557,69 @@
         return groups;
       },
 
-      showPendingReview(summary, finalPlan) {
+      showPendingReview(summary, finalPlan, reviewModel = null) {
         this.pendingPlan = finalPlan;
+        this.reviewModel = reviewModel || { annotations: [], deletions: [], maintenance: [], relations: [], commentLinks: [] };
+        this.setRunPhase('review');
         const panel = document.getElementById('pending-review');
         if (!panel) return;
         panel.textContent = '';
         panel.style.display = 'block';
-        const delta = finalPlan.annotations || [];
-        const deletions = finalPlan.deletions || [];
+        const delta = this.reviewModel.annotations || [];
+        const deletions = this.reviewModel.deletions || [];
         const groups = this.groupPendingAnnotations(delta);
         const h2 = document.createElement('h2');
-        h2.textContent = `Review & integrate — ${delta.length} new highlight(s) across ${groups.length} title(s)`;
+        h2.textContent = 'Review changes';
         panel.appendChild(h2);
         const desc = document.createElement('div');
         desc.className = 'muted';
-        desc.textContent = 'Untick anything you do not want yet. Skipped highlights are offered again on the next run; nothing is recorded as done until you press Integrate.' + (deletions.length ? ` ${deletions.length} withdrawn highlight(s) will also be removed from Zotero.` : '');
+        desc.textContent = `Kanzi prepared ${this.reviewModel.operation_count || 0} change(s). Zotero has not been changed. Untick anything you want to leave for later.`;
         panel.appendChild(desc);
+        const counts = document.createElement('div');
+        counts.className = 'review-counts';
+        const kinds = {
+          Add: delta.filter(item => item.kind === 'add').length,
+          Update: delta.filter(item => item.kind === 'update').length,
+          'Already current': delta.filter(item => item.kind === 'unchanged').length,
+          Delete: deletions.length,
+          Maintenance: (this.reviewModel.maintenance || []).length,
+          Relation: (this.reviewModel.relations || []).length,
+          'Comment link': (this.reviewModel.commentLinks || []).length,
+        };
+        for (const [label, value] of Object.entries(kinds)) {
+          if (!value) continue;
+          const chip = document.createElement('span');
+          chip.className = 'review-chip';
+          chip.textContent = `${value} ${label}`;
+          counts.appendChild(chip);
+        }
+        panel.appendChild(counts);
+        if ((this.reviewModel.warnings || []).length) {
+          const warningSection = document.createElement('div');
+          warningSection.className = 'review-section';
+          const warningHeading = document.createElement('h3');
+          warningHeading.textContent = 'Warnings (no automatic change)';
+          warningSection.appendChild(warningHeading);
+          for (const warning of this.reviewModel.warnings) {
+            const row = document.createElement('div');
+            row.className = 'review-warning';
+            const marker = document.createElement('span');
+            marker.className = 'review-action';
+            marker.textContent = 'Warning';
+            row.appendChild(marker);
+            const copy = document.createElement('span');
+            const main = document.createElement('strong');
+            main.textContent = warning.action;
+            copy.appendChild(main);
+            const detail = document.createElement('span');
+            detail.className = 'review-destination';
+            detail.textContent = `${warning.text} ${warning.destination?.label || ''}`.trim();
+            copy.appendChild(detail);
+            row.appendChild(copy);
+            warningSection.appendChild(row);
+          }
+          panel.appendChild(warningSection);
+        }
         const toolbar = document.createElement('div');
         toolbar.className = 'pending-toolbar';
         const mkBtn = (label, fn) => {
@@ -447,11 +630,11 @@
           return b;
         };
         toolbar.appendChild(mkBtn('Select all', () => {
-          panel.querySelectorAll('input[data-clip-id], input[data-group-key]').forEach(cb => { cb.checked = true; cb.indeterminate = false; });
+          panel.querySelectorAll('input[data-operation-id]:not(:disabled), input[data-group-key]').forEach(cb => { cb.checked = true; cb.indeterminate = false; });
           this.updatePendingCount();
         }));
         toolbar.appendChild(mkBtn('Select none', () => {
-          panel.querySelectorAll('input[data-clip-id], input[data-group-key]').forEach(cb => { cb.checked = false; cb.indeterminate = false; });
+          panel.querySelectorAll('input[data-operation-id], input[data-group-key]').forEach(cb => { cb.checked = false; cb.indeterminate = false; });
           this.updatePendingCount();
         }));
         const count = document.createElement('span');
@@ -485,6 +668,12 @@
             cite.textContent = g.citationKey;
             head.appendChild(cite);
           }
+          if (g.destination?.title) {
+            const destination = document.createElement('span');
+            destination.className = 'review-destination';
+            destination.textContent = `Zotero: ${g.destination.title} · ${g.destination.libraryName || 'Unknown library'}`;
+            head.appendChild(destination);
+          }
           box.appendChild(head);
           const items = document.createElement('div');
           items.className = 'pending-items';
@@ -495,6 +684,7 @@
             cb.type = 'checkbox';
             cb.checked = true;
             cb.dataset.clipId = it.id;
+            cb.dataset.operationId = it.operationId;
             cb.addEventListener('change', () => {
               const boxes = [...box.querySelectorAll('input[data-clip-id]')];
               const checked = boxes.filter(b => b.checked).length;
@@ -503,6 +693,11 @@
               this.updatePendingCount();
             });
             row.appendChild(cb);
+            const action = document.createElement('span');
+            action.className = 'review-action';
+            action.textContent = it.kind === 'unchanged' ? 'Current' : it.kind;
+            action.title = it.changes.length ? `Changes: ${it.changes.join(', ')}` : 'No field changes';
+            row.appendChild(action);
             const sw = document.createElement('span');
             sw.className = 'swatch';
             sw.style.background = it.color;
@@ -526,16 +721,69 @@
           list.appendChild(box);
         }
         panel.appendChild(list);
+
+        const appendOperations = (title, operations, type) => {
+          if (!operations.length) return;
+          const section = document.createElement('div');
+          section.className = 'review-section';
+          const heading = document.createElement('h3');
+          heading.textContent = title;
+          section.appendChild(heading);
+          for (const operation of operations) {
+            const row = document.createElement('label');
+            row.className = 'review-operation' + (operation.blocked ? ' blocked' : '');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = !operation.blocked;
+            cb.disabled = !!operation.blocked;
+            cb.dataset.operationId = operation.operation_id;
+            if (type === 'delete') {
+              cb.dataset.deleteId = operation.clipping_id;
+              if (operation.replacement_clipping_id) cb.dataset.replacementId = operation.replacement_clipping_id;
+            }
+            if (operation.depends_on_clipping_id) {
+              cb.dataset.dependsOnClipId = operation.depends_on_clipping_id;
+            }
+            cb.addEventListener('change', () => this.updatePendingCount());
+            row.appendChild(cb);
+            const action = document.createElement('span');
+            action.className = 'review-action';
+            action.textContent = type === 'comment-link' ? 'Comment link' : type;
+            row.appendChild(action);
+            const copy = document.createElement('span');
+            const main = document.createElement('strong');
+            main.textContent = operation.action || operation.clipping_title || operation.destination?.title || title;
+            copy.appendChild(main);
+            const detail = document.createElement('span');
+            detail.className = 'review-destination';
+            const reason = operation.reason ? ` · ${operation.reason.replaceAll('-', ' ')}` : '';
+            const blocked = operation.blocked ? ' · blocked until its replacement can be positioned' : '';
+            const relationContext = operation.source
+              ? `${operation.source.title} → ${operation.target?.title || 'referenced item'} · ${operation.source.libraryName}`
+              : operation.destination?.title
+                ? `${operation.destination.title} · ${operation.destination.libraryName}`
+                : '';
+            detail.textContent = `${operation.text ? operation.text.slice(0, 180) : relationContext}${reason}${blocked}`;
+            copy.appendChild(detail);
+            row.appendChild(copy);
+            section.appendChild(row);
+          }
+          panel.appendChild(section);
+        };
+        appendOperations('Annotations to remove', deletions, 'delete');
+        appendOperations('Kanzi annotation maintenance', this.reviewModel.maintenance || [], 'maintenance');
+        appendOperations('Zotero item relations', this.reviewModel.relations || [], 'relation');
+        appendOperations('Clickable citekey links', this.reviewModel.commentLinks || [], 'comment-link');
         const footer = document.createElement('div');
         footer.className = 'pending-footer';
         const go = document.createElement('button');
         go.id = 'pending-integrate';
-        go.textContent = `Integrate selected`;
+        go.textContent = 'Apply selected changes';
         go.addEventListener('click', () => this.integrateSelected());
         footer.appendChild(go);
         const cancel = document.createElement('button');
         cancel.id = 'pending-cancel';
-        cancel.textContent = 'Cancel (nothing is written)';
+        cancel.textContent = 'Cancel — no Zotero changes';
         cancel.addEventListener('click', () => this.cancelPendingReview());
         footer.appendChild(cancel);
         panel.appendChild(footer);
@@ -545,6 +793,7 @@
 
       hidePendingReview() {
         this.pendingPlan = null;
+        this.reviewModel = null;
         const panel = document.getElementById('pending-review');
         if (panel) {
           panel.style.display = 'none';
@@ -555,35 +804,56 @@
       updatePendingCount() {
         const panel = document.getElementById('pending-review');
         if (!panel) return;
-        const n = panel.querySelectorAll('input[data-clip-id]:checked').length;
-        const total = panel.querySelectorAll('input[data-clip-id]').length;
+        for (const deletion of panel.querySelectorAll('input[data-delete-id][data-replacement-id]')) {
+          const replacement = panel.querySelector(`input[data-clip-id="${CSS.escape(deletion.dataset.replacementId)}"]`);
+          if (replacement && !replacement.checked) {
+            deletion.checked = false;
+            deletion.disabled = true;
+          } else if (!deletion.closest('.blocked')) {
+            deletion.disabled = false;
+          }
+        }
+        for (const operation of panel.querySelectorAll('input[data-depends-on-clip-id]')) {
+          const dependency = panel.querySelector(`input[data-clip-id="${CSS.escape(operation.dataset.dependsOnClipId)}"]`);
+          if (dependency && !dependency.checked) {
+            operation.checked = false;
+            operation.disabled = true;
+          } else {
+            operation.disabled = false;
+          }
+        }
+        const n = panel.querySelectorAll('input[data-operation-id]:checked').length;
+        const total = panel.querySelectorAll('input[data-operation-id]').length;
         const count = document.getElementById('pending-count');
         if (count) count.textContent = `${n} of ${total} selected`;
         const go = document.getElementById('pending-integrate');
         if (go) {
-          const deletions = (this.pendingPlan?.deletions || []).length;
-          go.disabled = n === 0 && deletions === 0;
-          go.textContent = deletions
-            ? `Integrate selected (${n}) + ${deletions} deletion(s)`
-            : `Integrate selected (${n})`;
+          const warningOnly = total === 0 && (this.reviewModel?.warnings || []).length > 0;
+          go.disabled = n === 0 && !warningOnly;
+          go.textContent = warningOnly ? 'Finish review' : `Apply selected changes (${n})`;
         }
       },
 
-      getSelectedClippingIds() {
+      getPendingSelection() {
         const panel = document.getElementById('pending-review');
-        if (!panel) return [];
-        return [...panel.querySelectorAll('input[data-clip-id]:checked')].map(cb => cb.dataset.clipId);
+        if (!panel) return { clippingIds: [], deletionIds: [], operationIds: [] };
+        return {
+          clippingIds: [...panel.querySelectorAll('input[data-clip-id]:checked')].map(cb => cb.dataset.clipId),
+          deletionIds: [...panel.querySelectorAll('input[data-delete-id]:checked')].map(cb => cb.dataset.deleteId),
+          operationIds: [...panel.querySelectorAll('input[data-operation-id]:checked')].map(cb => cb.dataset.operationId),
+        };
       },
 
       async integrateSelected() {
-        const ids = this.getSelectedClippingIds();
-        if (!ids.length && !(this.pendingPlan?.deletions || []).length) return;
+        const selection = this.getPendingSelection();
+        if (!selection.operationIds.length && !(this.reviewModel?.warnings || []).length) return;
+        this.setRunPhase('apply');
         const go = document.getElementById('pending-integrate');
         const cancel = document.getElementById('pending-cancel');
         if (go) go.disabled = true;
         if (cancel) cancel.disabled = true;
         try {
-          await this.plugin.integratePending(this, ids);
+          await this.plugin.integratePending(this, selection);
         } catch (e) {
           this.failRun(String(e && e.stack ? e.stack : e));
         }
@@ -598,13 +868,30 @@
       },
 
       getFullReimport() {
-        const cb = document.getElementById('full-reimport-check');
-        return !!(cb && cb.checked);
+        return this.getRunMode() === 'recheck';
       },
 
       getRetryUnresolved() {
-        const cb = document.getElementById('retry-unresolved-check');
-        return !!(cb && cb.checked);
+        return this.getRunMode() === 'retry';
+      },
+
+      getRunMode() {
+        return document.querySelector('input[name="run-mode"]:checked')?.value || 'update';
+      },
+
+      runModeFlags(mode = this.getRunMode()) {
+        return {
+          full: mode === 'recheck',
+          retry: mode === 'retry',
+        };
+      },
+
+      runModeLabel(mode = this.getRunMode()) {
+        return {
+          update: 'Update changes',
+          retry: 'Update changes and try unresolved again',
+          recheck: 'Recheck all clippings',
+        }[mode] || 'Update changes';
       },
 
       updateInfobox() {
@@ -640,11 +927,11 @@
 
       async reimportWithOverrides() {
         if (this.running) return;
-        const isFull = this.getFullReimport();
-        const mode = isFull ? "FULL re-import from scratch (all highlights)" : "incremental (only new/changed/removed)";
+        const flags = this.runModeFlags();
+        const mode = this.runModeLabel();
         if (this.lastClippingsPath) {
-          if (!confirm(`Re-import with saved overrides using last file?\n\n${this.lastClippingsPath}\n\nMode: ${mode}\nThis will re-run matching and positioning. You will review the pending highlights and press Integrate before anything is written to Zotero.`)) return;
-          await this.plugin.runManagedImportWithPath(this, this.lastClippingsPath, isFull);
+          if (!confirm(`Prepare another review using the last file?\n\n${this.lastClippingsPath}\n\nMode: ${mode}\nKanzi will re-run matching and positioning. Nothing changes in Zotero until you review and press Apply.`)) return;
+          await this.plugin.runManagedImportWithPath(this, this.lastClippingsPath, flags.full, flags.retry);
         } else {
           await this.chooseAndImport();
         }
@@ -670,10 +957,39 @@
         return counts;
       },
 
+      statusInfo(rawStatus) {
+        const status = String(rawStatus || 'unknown');
+        const exact = {
+          matched: ['Destination found', 'Kanzi found one Zotero destination.'],
+          ambiguous: ['Choose a destination', 'Several Zotero items match. Choose the correct destination, then prepare again.'],
+          unmatched: ['Destination needed', 'Choose a suggestion or enter a citekey or Zotero key.'],
+          'unmatched-title': ['Destination needed', 'Choose a suggestion or enter a citekey or Zotero key.'],
+          ignored: ['Ignored', 'This title is excluded by a saved mapping.'],
+          'ignored-title': ['Ignored', 'This title is excluded by a saved mapping.'],
+          'missing-zotero-item': ['Saved destination missing', 'Restore the Zotero item or choose another destination.'],
+          'matched-title-no-attachment': ['Attachment needed', 'Attach the matching PDF or EPUB, then try unresolved items again.'],
+          'matched-title-ambiguous-attachment': ['Choose an attachment', 'Choose the PDF or EPUB containing this Kindle edition.'],
+          'matched-title-attachment-override-unresolved': ['Saved attachment missing', 'The saved attachment no longer exists. Choose another attachment.'],
+          positioned: ['Ready', 'The highlight is ready to apply.'],
+          'pdf-text-not-found': ['Text not found in PDF', 'Check the edition, inspect nearby page text, or copy/discard the clipping.'],
+          'epub-text-not-found': ['Text not found in EPUB', 'Check the edition, or copy/discard the clipping.'],
+          'pdf-rects-not-found': ['PDF selection unavailable', 'Create the highlight manually, or copy/discard the clipping.'],
+          'pdf-position-missing-path': ['PDF file unavailable', 'Relink or download the PDF in Zotero, then try again.'],
+          'epub-position-missing-path': ['EPUB file unavailable', 'Relink or download the EPUB in Zotero, then try again.'],
+          'pdf-position-skipped-non-highlight': ['Standalone note', 'Copy this note to Zotero manually or discard it.'],
+          'epub-position-skipped-non-highlight': ['Standalone note', 'Copy this note to Zotero manually or discard it.'],
+        };
+        let value = exact[status];
+        if (!value && status.startsWith('pdf-tools-missing:')) value = ['PDF tools missing', 'Install Poppler, restart Zotero, and prepare again.'];
+        if (!value && status.startsWith('pdf-position-error:')) value = ['Could not read PDF', 'Check encryption, file validity, permissions, and PDF tools.'];
+        if (!value && status.startsWith('epub-position-error:')) value = ['Could not read EPUB', 'Check that the EPUB opens correctly, then try again.'];
+        return { label: value?.[0] || status.replaceAll('-', ' '), remedy: value?.[1] || '', raw: status };
+      },
+
       cards(counts) {
         return Object.entries(counts || {})
           .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-          .map(([k, v]) => `<div class="card"><strong>${this.esc(v)}</strong><span>${this.esc(k)}</span></div>`)
+          .map(([k, v]) => `<div class="card"><strong>${this.esc(v)}</strong><span title="Technical status: ${this.esc(k)}">${this.esc(this.statusInfo(k).label)}</span></div>`)
           .join('') || '<div class="card">No data</div>';
       },
 
@@ -1554,6 +1870,16 @@
         root.appendChild(headerWrap);
         const panel = document.createElement('div');
         panel.className = 'run-panel';
+        const steps = document.createElement('div');
+        steps.className = 'run-steps';
+        for (const [id, label] of [['prepare','1 Prepare'],['review','2 Review'],['apply','3 Apply'],['results','4 Results']]) {
+          const step = document.createElement('div');
+          step.id = `run-step-${id}`;
+          step.className = 'run-step' + (id === 'prepare' ? ' active' : '');
+          step.textContent = label;
+          steps.appendChild(step);
+        }
+        panel.appendChild(steps);
         const runButton = document.createElement('div');
         runButton.id = 'run-button';
         runButton.className = 'file-button';
@@ -1572,7 +1898,7 @@
         runFile.id = 'run-file';
         runFile.className = 'muted';
         runFile.textContent = 'No file selected';
-        runFile.style.color = '#d7e0e3';
+        runFile.style.color = 'var(--muted)';
         panel.appendChild(runFile);
         const progress = document.createElement('progress');
         progress.id = 'progress';
@@ -1601,44 +1927,33 @@
         detail.id = 'detail';
         detail.textContent = 'Select your cumulative Kindle clippings file to begin.';
         panel.appendChild(detail);
-        const fullRow = document.createElement('div');
-        fullRow.style.marginTop = '8px';
-        fullRow.style.display = 'flex';
-        fullRow.style.alignItems = 'center';
-        fullRow.style.gap = '6px';
-        const fullCheck = document.createElement('input');
-        fullCheck.type = 'checkbox';
-        fullCheck.id = 'full-reimport-check';
-        fullCheck.style.width = 'auto';
-        fullRow.appendChild(fullCheck);
-        const fullLabel = document.createElement('label');
-        fullLabel.htmlFor = 'full-reimport-check';
-        fullLabel.textContent = 'Full re-import from scratch (ignore incremental, re-process all)';
-        fullLabel.style.margin = '0';
-        fullLabel.style.fontSize = '12px';
-        fullLabel.style.color = 'var(--muted)';
-        fullLabel.title = 'When checked, re-processes all 2379 clippings from scratch (slow). Unchecked = incremental (only new/changed highlights, fast).';
-        fullRow.appendChild(fullLabel);
-        panel.appendChild(fullRow);
-        const retryRow = document.createElement('div');
-        retryRow.style.marginTop = '6px';
-        retryRow.style.display = 'flex';
-        retryRow.style.alignItems = 'center';
-        retryRow.style.gap = '6px';
-        const retryCheck = document.createElement('input');
-        retryCheck.type = 'checkbox';
-        retryCheck.id = 'retry-unresolved-check';
-        retryCheck.style.width = 'auto';
-        retryRow.appendChild(retryCheck);
-        const retryLabel = document.createElement('label');
-        retryLabel.htmlFor = 'retry-unresolved-check';
-        retryLabel.textContent = 'Retry unresolved attachments and positions';
-        retryLabel.style.margin = '0';
-        retryLabel.style.fontSize = '12px';
-        retryLabel.style.color = 'var(--muted)';
-        retryLabel.title = 'Retries prior matching and positioning failures without rebuilding annotations that already succeeded.';
-        retryRow.appendChild(retryLabel);
-        panel.appendChild(retryRow);
+        const modes = document.createElement('div');
+        modes.className = 'mode-options';
+        const modeOptions = [
+          ['update', 'Update changes (recommended)', 'Process new, changed, removed, deferred, or previously failed clippings.'],
+          ['retry', 'Update changes and try unresolved again', 'Also retry titles, attachments, and positions that could not be resolved.'],
+          ['recheck', 'Recheck all clippings', 'Rebuild every plan entry. Existing Zotero annotations are reused rather than duplicated.'],
+        ];
+        for (const [value, title, description] of modeOptions) {
+          const label = document.createElement('label');
+          label.className = 'mode-option';
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = 'run-mode';
+          radio.value = value;
+          radio.checked = value === 'update';
+          const copy = document.createElement('span');
+          const strong = document.createElement('strong');
+          strong.textContent = title;
+          const detailCopy = document.createElement('span');
+          detailCopy.textContent = description;
+          copy.appendChild(strong);
+          copy.appendChild(detailCopy);
+          label.appendChild(radio);
+          label.appendChild(copy);
+          modes.appendChild(label);
+        }
+        panel.appendChild(modes);
         root.appendChild(panel);
 
         const pendingDiv = document.createElement('div');
@@ -1712,11 +2027,11 @@
         integratedTab.id = 'tab-integrated';
         integratedTab.className = 'tab';
         const iH2 = document.createElement('h2');
-        iH2.textContent = 'Last Integrated Highlights';
+        iH2.textContent = 'Integrated Highlights';
         integratedTab.appendChild(iH2);
         const iDesc = document.createElement('div');
         iDesc.className='muted';
-        iDesc.textContent = 'Highlights from the last successful pipeline run (import-plan.final.json). Filter by title, text, or citation key. After saving custom overrides, rerun the import to update this list.';
+        iDesc.textContent = 'Cumulative Kanzi annotation history from import-plan.final.json. Filter by title, text, or citation key. After saving custom overrides, prepare another review to update this list.';
         integratedTab.appendChild(iDesc);
         const iSearchWrap = document.createElement('div');
         iSearchWrap.style.display = 'flex';
@@ -2329,8 +2644,9 @@
           for (const s of (row.statuses || [row.status])) {
             const pill = document.createElement('span');
             pill.className = 'pill';
-            pill.textContent = s;
-            pill.title = `Sources: ${(row.sources || []).join(', ')}`;
+            const info = this.statusInfo(s);
+            pill.textContent = info.label;
+            pill.title = `${info.remedy || 'See expanded details.'}\nTechnical status: ${info.raw}\nSources: ${(row.sources || []).join(', ')}`;
             stack.appendChild(pill);
           }
           tdStatus.appendChild(stack);
@@ -2454,8 +2770,8 @@
               if (clip.kind) bits.push(clip.kind);
               if (clip.page) bits.push('p. ' + clip.page);
               if (clip.location) bits.push('loc. ' + clip.location);
-              if (clip.status && clip.status !== row.status) bits.push(clip.status);
-              chead.textContent = bits.join(' · ') || clip.status || 'highlight';
+              if (clip.status && clip.status !== row.status) bits.push(this.statusInfo(clip.status).label);
+              chead.textContent = bits.join(' · ') || this.statusInfo(clip.status || 'highlight').label;
               item.appendChild(chead);
               const ctext = document.createElement('div');
               ctext.className = 'clip-text';
@@ -2466,7 +2782,9 @@
               if (clip.problems && clip.problems.length) {
                 const prob = document.createElement('div');
                 prob.className = 'clip-problem';
-                prob.textContent = clip.problems.join('; ');
+                const status = this.statusInfo(clip.status);
+                prob.textContent = status.remedy || clip.problems.join('; ');
+                prob.title = `Technical details: ${clip.problems.join('; ')}`;
                 item.appendChild(prob);
               }
               if (clip.pageHint?.text) {

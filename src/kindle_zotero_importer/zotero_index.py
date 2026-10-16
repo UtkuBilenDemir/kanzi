@@ -12,6 +12,7 @@ METADATA_FIELDS = (
     "shortTitle",
     "DOI",
     "ISBN",
+    "ISSN",
     "date",
     "url",
     "citationKey",
@@ -48,8 +49,7 @@ def build_zotero_index(db_path: str, storage_root: str | None = None) -> dict[st
         items = _load_parent_items(connection)
         creators = _load_creators(connection)
         attachments = _load_attachments(connection, storage_root)
-
-    groups = _load_groups(connection)
+        groups = _load_groups(connection)
     indexed_items: list[ZoteroItem] = []
     for row in items:
         fields = _metadata_for_item(row)

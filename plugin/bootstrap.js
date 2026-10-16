@@ -646,6 +646,11 @@ var Kanzi = {
   },
 
   async runManagedImportWithPath(manager, clippingsPath, isFullOverride, retryUnresolvedOverride) {
+    let previousFinalText = null;
+    let previousClippingsText = null;
+    let finalPlanPath = null;
+    let clippingsArtifactPath = null;
+    let safeLedgerWritten = false;
     try {
       clippingsPath = this.filePickerResultToPath(clippingsPath) || clippingsPath;
       if (!clippingsPath) {
@@ -659,10 +664,15 @@ var Kanzi = {
         ? retryUnresolvedOverride
         : (manager.getRetryUnresolved ? manager.getRetryUnresolved() : false);
       manager.beginRun(clippingsPath);
-      const finalPlanPath = this.joinPath(settings.projectDir, "import-plan.final.json");
+      finalPlanPath = this.joinPath(settings.projectDir, "import-plan.final.json");
+      clippingsArtifactPath = this.joinPath(settings.projectDir, "clippings.json");
       let previousFinalPlan = null;
       try {
-        previousFinalPlan = JSON.parse(await Zotero.File.getContentsAsync(finalPlanPath));
+        previousFinalText = await Zotero.File.getContentsAsync(finalPlanPath);
+        previousFinalPlan = JSON.parse(previousFinalText);
+      } catch (_backupError) {}
+      try {
+        previousClippingsText = await Zotero.File.getContentsAsync(clippingsArtifactPath);
       } catch (_backupError) {}
       try {
         await Zotero.File.removeIfExists(progressPath);
@@ -690,22 +700,35 @@ var Kanzi = {
       const finalPlan = JSON.parse(
         await Zotero.File.getContentsAsync(summary.outputs.final_plan)
       );
-      const pendingCount = (finalPlan.annotations || []).length;
-      const pendingDeletions = (finalPlan.deletions || []).length;
-      if (!pendingCount && !pendingDeletions) {
-        // Nothing new — run the maintenance sweep and finish as before.
-        manager.updateProgress(96, "Writing annotations", "Checking existing annotations");
-        const emptyResults = await this.writeAnnotations(finalPlan, false, (completed, total) => {
-          const percent = total ? 96 + Math.floor((completed / total) * 4) : 100;
-          manager.updateProgress(percent, "Writing annotations", `${completed} of ${total} checked`);
-        });
-        await this.reconcileWriterState(summary.outputs.final_plan, finalPlan, emptyResults);
+      const generatedDeltaIds = (finalPlan.annotations || []).map((a) => a.clipping_id);
+      // The pipeline writes generated artifacts before Zotero review. Replace
+      // its final ledger immediately so any later UI/preflight failure remains
+      // retryable rather than recording annotations that were never applied.
+      const initialDeferredPlan = this.deferPendingPlan(
+        previousFinalPlan,
+        finalPlan,
+        generatedDeltaIds
+      );
+      await Zotero.File.putContentsAsync(
+        summary.outputs.final_plan,
+        JSON.stringify(initialDeferredPlan, null, 2) + "\n"
+      );
+      safeLedgerWritten = true;
+      manager.updateProgress(90, "Preparing review", "Comparing the plan with Zotero");
+      const reviewModel = await this.buildReviewModel(finalPlan, previousFinalPlan);
+      if (!reviewModel.operation_count && !reviewModel.warnings.length) {
+        await Zotero.File.putContentsAsync(
+          summary.outputs.final_plan,
+          JSON.stringify(finalPlan, null, 2) + "\n"
+        );
+        const emptyResults = this.emptyWriterResults(0);
+        emptyResults.noChanges = true;
         const emptyData = await this.loadManagerData();
         await manager.completeRun(summary, emptyResults, emptyData);
         return;
       }
       // Pause before writing: let the user review and select what to integrate.
-      const fullDeltaIds = (finalPlan.annotations || []).map((a) => a.clipping_id);
+      const fullDeltaIds = (reviewModel.annotations || []).map((a) => a.clipping_id);
       // The pipeline has already written its generated history. Replace it with
       // a safe ledger until Integrate is pressed, including if the window closes.
       const deferredPlan = this.deferPendingPlan(previousFinalPlan, finalPlan, fullDeltaIds);
@@ -719,14 +742,31 @@ var Kanzi = {
         finalPlanPath: summary.outputs.final_plan,
         fullDeltaIds,
         previousFinalPlan,
+        reviewModel,
       };
       manager.updateProgress(
         90,
-        "Review pending",
-        `${pendingCount} highlight(s) ready — select and press Integrate`
+        "Review ready",
+        `${reviewModel.operation_count} proposed change(s) — review before applying`
       );
-      manager.showPendingReview(summary, finalPlan);
+      manager.showPendingReview(summary, finalPlan, reviewModel);
     } catch (error) {
+      if (!safeLedgerWritten) {
+        try {
+          if (previousFinalText !== null && finalPlanPath) {
+            await Zotero.File.putContentsAsync(finalPlanPath, previousFinalText);
+          } else if (finalPlanPath) {
+            await Zotero.File.removeIfExists(finalPlanPath);
+          }
+          if (previousClippingsText !== null && clippingsArtifactPath) {
+            await Zotero.File.putContentsAsync(clippingsArtifactPath, previousClippingsText);
+          } else if (clippingsArtifactPath) {
+            await Zotero.File.removeIfExists(clippingsArtifactPath);
+          }
+        } catch (restoreError) {
+          Zotero.logError(restoreError);
+        }
+      }
       Zotero.logError(error);
       manager.failRun(String(error && error.stack ? error.stack : error));
     }
@@ -746,22 +786,84 @@ var Kanzi = {
     const deferred = new Set(plan.deferred_clipping_ids || []);
     for (const id of deferredIds || []) deferred.add(id);
     plan.deferred_clipping_ids = [...deferred].sort();
+    const pendingCandidates = new Map();
+    for (const candidate of [
+      ...(plan.pending_deletion_candidates || []),
+      ...(plan.deletion_candidates || []),
+      ...(generatedPlan.deletion_candidates || []),
+    ]) {
+      if (candidate?.clipping_id) pendingCandidates.set(candidate.clipping_id, candidate);
+    }
+    plan.pending_deletion_candidates = [...pendingCandidates.values()];
     return plan;
   },
 
   // Pure helper (tested): narrow a pipeline plan to the user's selection.
-  filterPlanForSelection(finalPlan, fullDeltaIds, selectedIds, previousPlan = null) {
+  filterPlanForSelection(
+    finalPlan,
+    fullDeltaIds,
+    selectedIds,
+    previousPlan = null,
+    selectedDeletionIds = null,
+    selectedOperationIDs = null
+  ) {
     const selected = new Set(selectedIds || []);
+    const selectedOperations = new Set(selectedOperationIDs || []);
     const unselected = new Set(
       (fullDeltaIds || []).filter((id) => !selected.has(id))
     );
     const plan = { ...finalPlan };
-    plan.annotations = (finalPlan.annotations || []).filter((a) =>
-      selected.has(a.clipping_id)
+    plan.annotations = (finalPlan.annotations || [])
+      .filter((a) => selected.has(a.clipping_id))
+      .map((entry) => {
+        if (
+          !selectedOperationIDs ||
+          selectedOperations.has(`comment-link:${entry.clipping_id}`)
+        ) {
+          return entry;
+        }
+        return {
+          ...entry,
+          annotation: {
+            ...(entry.annotation || {}),
+            comment: this.commentWithoutRelationLinks(entry),
+          },
+        };
+      });
+    const selectedDeletions = selectedDeletionIds
+      ? new Set(selectedDeletionIds)
+      : new Set((finalPlan.deletion_candidates || []).map((entry) => entry.clipping_id));
+    plan.deletion_candidates = (finalPlan.deletion_candidates || []).filter((candidate) =>
+      selectedDeletions.has(candidate.clipping_id) &&
+      !candidate.blocked &&
+      (!candidate.replacement_clipping_id || selected.has(candidate.replacement_clipping_id))
     );
+    plan.deletions = Array.isArray(finalPlan.deletion_candidates)
+      ? plan.deletion_candidates.map((candidate) => candidate.clipping_id)
+      : (finalPlan.deletions || []).filter((clippingID) => selectedDeletions.has(clippingID));
+    const activeDeletionIDs = new Set(
+      plan.deletion_candidates.map((candidate) => candidate.clipping_id)
+    );
+    plan.pending_deletion_candidates = (finalPlan.deletion_candidates || []).filter(
+      (candidate) => !activeDeletionIDs.has(candidate.clipping_id)
+    );
+    const relationEntries = new Set();
+    if (selectedOperationIDs) {
+      for (const entry of finalPlan.all_annotations || []) {
+        if (selectedOperations.has(`comment-link:${entry.clipping_id}`)) {
+          relationEntries.add(entry.clipping_id);
+          continue;
+        }
+        if ((entry.related_items || []).some((target) =>
+          selectedOperations.has(this.relationOperationID(entry.parent_item_id, target.item_id))
+        )) {
+          relationEntries.add(entry.clipping_id);
+        }
+      }
+    }
     if (unselected.size && Array.isArray(finalPlan.all_annotations)) {
       plan.all_annotations = finalPlan.all_annotations.filter(
-        (a) => !unselected.has(a.clipping_id)
+        (a) => !unselected.has(a.clipping_id) || relationEntries.has(a.clipping_id)
       );
       const present = new Set(plan.all_annotations.map((a) => a.clipping_id));
       for (const annotation of previousPlan?.all_annotations || previousPlan?.annotations || []) {
@@ -775,6 +877,7 @@ var Kanzi = {
     for (const id of selected) deferred.delete(id);
     for (const id of unselected) deferred.add(id);
     plan.deferred_clipping_ids = [...deferred].sort();
+    plan.reconciliation_excluded_ids = [...unselected].sort();
     plan.delta_annotation_count = plan.annotations.length;
     if (Array.isArray(plan.all_annotations)) {
       plan.annotation_count = plan.all_annotations.length;
@@ -782,24 +885,40 @@ var Kanzi = {
     return plan;
   },
 
-  async integratePending(manager, selectedIds) {
+  async integratePending(manager, selection) {
     const pending = this._pending;
     if (!pending) {
       throw new Error("No pending review to integrate");
     }
     try {
+      const selectedIds = Array.isArray(selection)
+        ? selection
+        : (selection?.clippingIds || []);
+      const selectedDeletionIds = Array.isArray(selection)
+        ? null
+        : (selection?.deletionIds || []);
+      const approvedOperationIDs = Array.isArray(selection)
+        ? selectedIds.map((id) => `annotation:${id}`)
+        : (selection?.operationIds || []);
       const plan = this.filterPlanForSelection(
         pending.finalPlan,
         pending.fullDeltaIds,
         selectedIds,
-        pending.previousFinalPlan
+        pending.previousFinalPlan,
+        selectedDeletionIds,
+        approvedOperationIDs
       );
-      manager.updateProgress(96, "Writing annotations", "Saving selected annotations in Zotero");
+      manager.updateProgress(96, "Applying changes", "Saving the approved review in Zotero");
       const results = await this.writeAnnotations(plan, false, (completed, total) => {
         const percent = total ? 96 + Math.floor((completed / total) * 4) : 100;
         manager.updateProgress(percent, "Writing annotations", `${completed} of ${total} checked`);
-      });
-      await this.reconcileWriterState(pending.finalPlanPath, plan, results);
+      }, approvedOperationIDs);
+      await this.reconcileWriterState(
+        pending.finalPlanPath,
+        plan,
+        results,
+        pending.previousFinalPlan
+      );
       this._pending = null;
       const data = await this.loadManagerData();
       await manager.completeRun(pending.summary, results, data);
@@ -970,6 +1089,283 @@ var Kanzi = {
     return shorter.length >= 20 && longer.startsWith(shorter);
   },
 
+  zoteroItemDescription(itemID, fallback = {}) {
+    const item = itemID ? Zotero.Items.get(itemID) : null;
+    let title = fallback.title || "Untitled Zotero item";
+    if (item) {
+      try { title = item.getField ? item.getField("title") || title : item.title || title; } catch (_error) {}
+    }
+    const libraryID = item?.libraryID ?? fallback.library_id ?? null;
+    let libraryName = libraryID ? `Library ${libraryID}` : "Unknown library";
+    try {
+      const library = libraryID && Zotero.Libraries?.get ? Zotero.Libraries.get(libraryID) : null;
+      if (library) {
+        libraryName = library.libraryType === "user" || library.libraryID === Zotero.Libraries.userLibraryID
+          ? "My Library"
+          : library.name || libraryName;
+      }
+    } catch (_error) {}
+    const citationKey = fallback.citation_key || "";
+    return {
+      itemID: item?.id || itemID || null,
+      key: item?.key || fallback.key || "",
+      title,
+      libraryID,
+      libraryName,
+      citationKey,
+      label: `${title}${citationKey ? ` (@${citationKey})` : ""} · ${libraryName}`,
+    };
+  },
+
+  findMatchingAnnotation(entry, annotations) {
+    const planned = entry.annotation || {};
+    const fingerprint = this.annotationFingerprint(planned);
+    const matches = (annotations || []).filter((candidate) =>
+      this.hasKindleImportTag(candidate) &&
+      (this.existingAnnotationFingerprint(candidate) === fingerprint ||
+        this.areImportedDuplicates(candidate, planned))
+    );
+    return matches[0] || null;
+  },
+
+  annotationChanges(entry, existingAnnotation) {
+    if (!existingAnnotation) return ["annotation"];
+    const annotation = entry.annotation || {};
+    const changes = [];
+    const mergedComment = this.commentForExistingAnnotation(
+      existingAnnotation,
+      annotation.comment,
+      entry.previous_imported_comment
+    );
+    if (String(existingAnnotation.annotationComment || "") !== mergedComment) changes.push("comment");
+    const existingTags = new Set(this.existingTags(existingAnnotation));
+    if ((annotation.tags || []).some((tag) => !existingTags.has(tag.name || tag.tag))) changes.push("tags");
+    const existingColour = existingAnnotation.annotationColor || existingAnnotation.color || "";
+    if (annotation.color && existingColour.toLowerCase() !== annotation.color.toLowerCase()) changes.push("colour");
+    if (annotation.sortIndex && this.existingSortIndex(existingAnnotation) !== annotation.sortIndex) changes.push("sort order");
+    return changes;
+  },
+
+  annotationObjectID(annotation) {
+    return String(annotation?.id || annotation?.key || this.existingAnnotationFingerprint(annotation));
+  },
+
+  relationOperationID(sourceID, targetID) {
+    return `relation:${[Number(sourceID), Number(targetID)].sort((a, b) => a - b).join(":")}`;
+  },
+
+  relationCommentBlock(entry) {
+    const targets = entry?.related_items || [];
+    return targets.length
+      ? "Related: " + targets.map(
+        (target) => `@${target.citation_key} ${target.link || ""}`.trim()
+      ).join(" · ")
+      : "";
+  },
+
+  commentWithoutRelationLinks(entry) {
+    const comment = String(entry?.annotation?.comment || "");
+    const block = this.relationCommentBlock(entry);
+    return block ? comment.replace(block, "").replace(/\n{3,}/g, "\n\n").trim() : comment;
+  },
+
+  planMaintenanceOperations(annotations) {
+    const operations = [];
+    const byAttachment = new Map();
+    for (const annotation of annotations || []) {
+      const parentID = annotation.parentItemID || annotation.parentID;
+      if (!byAttachment.has(parentID)) byAttachment.set(parentID, []);
+      byAttachment.get(parentID).push(annotation);
+    }
+    for (const group of byAttachment.values()) {
+      group.sort((a, b) =>
+        this.normalizeAnnotationText(b.annotationText).length -
+        this.normalizeAnnotationText(a.annotationText).length
+      );
+      const kept = [];
+      for (const annotation of group) {
+        const objectID = this.annotationObjectID(annotation);
+        const canonicalComment = this.mergeComments(annotation.annotationComment, "");
+        if (String(annotation.annotationComment || "") !== canonicalComment) {
+          operations.push({
+            operation_id: `maintenance:comment:${objectID}`,
+            kind: "maintenance",
+            action: "Normalize imported comment",
+            text: annotation.annotationText || "",
+            parent_item_id: annotation.parentItemID || annotation.parentID,
+          });
+        }
+        const duplicateOf = kept.find((candidate) => this.areImportedDuplicates(candidate, annotation));
+        if (!duplicateOf) {
+          kept.push(annotation);
+          continue;
+        }
+        operations.push({
+          operation_id: `maintenance:duplicate:${objectID}`,
+          kind: "maintenance",
+          action: "Merge duplicate Kanzi annotation",
+          text: annotation.annotationText || "",
+          parent_item_id: annotation.parentItemID || annotation.parentID,
+        });
+      }
+    }
+    return operations;
+  },
+
+  async buildReviewModel(finalPlan, previousPlan = null) {
+    const model = {
+      annotations: [],
+      deletions: [],
+      maintenance: [],
+      relations: [],
+      commentLinks: [],
+      warnings: [],
+    };
+    const currentAnnotationIDs = new Set(
+      (finalPlan.annotations || []).map((entry) => entry.clipping_id)
+    );
+    for (const entry of finalPlan.annotations || []) {
+      const reviewEntry = {
+        ...entry,
+        annotation: {
+          ...(entry.annotation || {}),
+          comment: this.commentWithoutRelationLinks(entry),
+        },
+      };
+      const attachment = Zotero.Items.get(entry.attachment_item_id);
+      const existing = attachment
+        ? this.findMatchingAnnotation(reviewEntry, attachment.getAnnotations ? attachment.getAnnotations() : [])
+        : null;
+      const changes = existing ? this.annotationChanges(reviewEntry, existing) : ["annotation"];
+      if (existing && !changes.length) continue;
+      model.annotations.push({
+        operation_id: `annotation:${entry.clipping_id}`,
+        kind: existing ? "update" : "add",
+        clipping_id: entry.clipping_id,
+        clipping_title: entry.clipping_title,
+        text: entry.annotation?.text || "",
+        page: entry.annotation?.pageLabel || "",
+        color: entry.annotation?.color || "#ffd400",
+        changes,
+        destination: this.zoteroItemDescription(entry.parent_item_id, {
+          title: entry.parent_title,
+          key: entry.parent_key,
+          citation_key: entry.citation_key,
+          library_id: entry.library_id,
+        }),
+      });
+    }
+
+    const previousByID = new Map(
+      (previousPlan?.all_annotations || previousPlan?.annotations || []).map(
+        (entry) => [entry.clipping_id, entry]
+      )
+    );
+    for (const candidate of finalPlan.deletion_candidates || (finalPlan.deletions || []).map(
+      (clippingID) => ({ clipping_id: clippingID, candidate_id: `delete:${clippingID}`, reason: "source-removed" })
+    )) {
+      const previous = previousByID.get(candidate.clipping_id) || {};
+      model.deletions.push({
+        ...candidate,
+        operation_id: candidate.candidate_id || `delete:${candidate.clipping_id}`,
+        kind: "delete",
+        text: candidate.text || previous.annotation?.text || "",
+        clipping_title: candidate.clipping_title || previous.clipping_title || "",
+        destination: this.zoteroItemDescription(candidate.parent_item_id || previous.parent_item_id, {
+          title: previous.parent_title,
+          key: previous.parent_key,
+          citation_key: candidate.citation_key || previous.citation_key,
+          library_id: previous.library_id,
+        }),
+      });
+    }
+
+    const imported = await this.collectImportedAnnotations();
+    model.maintenance = this.planMaintenanceOperations(imported);
+    const relationEntries = finalPlan.all_annotations || finalPlan.annotations || [];
+    const seenWarnings = new Set();
+    for (const entry of relationEntries) {
+      for (const citationKey of entry.ambiguous_citekeys || []) {
+        const warningID = `${entry.clipping_id}:${citationKey}`;
+        if (seenWarnings.has(warningID)) continue;
+        seenWarnings.add(warningID);
+        model.warnings.push({
+          kind: "warning",
+          action: `Ambiguous @${citationKey} reference`,
+          text: "More than one Zotero item in the source library has this citation key, so Kanzi did not create a link or relation.",
+          clipping_id: entry.clipping_id,
+          destination: this.zoteroItemDescription(entry.parent_item_id, {
+            title: entry.parent_title,
+            key: entry.parent_key,
+            citation_key: entry.citation_key,
+            library_id: entry.library_id,
+          }),
+        });
+      }
+    }
+    const seenRelations = new Set();
+    for (const entry of relationEntries) {
+      for (const targetInfo of entry.related_items || []) {
+        const source = Zotero.Items.get(entry.parent_item_id);
+        const target = Zotero.Items.get(targetInfo.item_id);
+        if (!source || !target || source.id === target.id) continue;
+        const operationID = this.relationOperationID(source.id, target.id);
+        if (source.libraryID === target.libraryID && !seenRelations.has(operationID)) {
+          let exists = false;
+          try {
+            exists = (source.relatedItems || []).includes(target.key) &&
+              (target.relatedItems || []).includes(source.key);
+          } catch (_error) {}
+          if (!exists) {
+            model.relations.push({
+              operation_id: operationID,
+              kind: "relation",
+              action: "Add bidirectional Zotero relation",
+              source: this.zoteroItemDescription(source.id, { citation_key: entry.citation_key }),
+              target: this.zoteroItemDescription(target.id, targetInfo),
+            });
+          }
+          seenRelations.add(operationID);
+        }
+      }
+      const block = this.relationCommentBlock(entry);
+      if (!block || !entry.clipping_id || !entry.attachment_item_id) continue;
+      const sourceItem = Zotero.Items.get(entry.parent_item_id);
+      const crossLibrary = (entry.related_items || []).some((targetInfo) => {
+        const targetItem = Zotero.Items.get(targetInfo.item_id);
+        return sourceItem && targetItem && sourceItem.libraryID !== targetItem.libraryID;
+      });
+      const attachment = Zotero.Items.get(entry.attachment_item_id);
+      const tag = `kindle-id:${entry.clipping_id}`;
+      const existing = (attachment?.getAnnotations ? attachment.getAnnotations() : []).find(
+        (annotation) => this.existingTags(annotation).includes(tag)
+      );
+      const current = currentAnnotationIDs.has(entry.clipping_id);
+      if ((current && !existing) || (existing && !String(existing.annotationComment || "").includes(block))) {
+        model.commentLinks.push({
+          operation_id: `comment-link:${entry.clipping_id}`,
+          kind: "comment-link",
+          action: crossLibrary
+            ? "Add clickable link (native Zotero relation is unavailable across libraries)"
+            : "Append clickable citekey link",
+          clipping_id: entry.clipping_id,
+          depends_on_clipping_id: current && !existing ? entry.clipping_id : null,
+          text: entry.annotation?.text || "",
+          block,
+          destination: this.zoteroItemDescription(entry.parent_item_id, {
+            title: entry.parent_title,
+            key: entry.parent_key,
+            citation_key: entry.citation_key,
+            library_id: entry.library_id,
+          }),
+        });
+      }
+    }
+    model.operation_count = model.annotations.length + model.deletions.length +
+      model.maintenance.length + model.relations.length + model.commentLinks.length;
+    return model;
+  },
+
   async collectImportedAnnotations() {
     const annotations = [];
     let allItems = [];
@@ -986,10 +1382,13 @@ var Kanzi = {
     return annotations;
   },
 
-  async maintainImportedAnnotations(annotations, dryRun, results) {
+  async maintainImportedAnnotations(annotations, dryRun, results, approvedOperationIDs = null) {
     if (!results.maintenanceDeletedIds) results.maintenanceDeletedIds = [];
+    const approved = approvedOperationIDs ? new Set(approvedOperationIDs) : null;
+    const isApproved = (operationID) => !approved || approved.has(operationID);
     const byAttachment = new Map();
     for (const annotation of annotations) {
+      if (!this.hasKindleImportTag(annotation)) continue;
       const parentID = annotation.parentItemID || annotation.parentID;
       if (!byAttachment.has(parentID)) byAttachment.set(parentID, []);
       byAttachment.get(parentID).push(annotation);
@@ -1002,11 +1401,18 @@ var Kanzi = {
       );
       const kept = [];
       for (const annotation of group) {
+        const objectID = this.annotationObjectID(annotation);
         const canonicalComment = this.mergeComments(annotation.annotationComment, "");
-        if (String(annotation.annotationComment || "") !== canonicalComment) {
-          annotation.annotationComment = canonicalComment;
+        const normalizeID = `maintenance:comment:${objectID}`;
+        if (
+          String(annotation.annotationComment || "") !== canonicalComment &&
+          isApproved(normalizeID)
+        ) {
           results.updatedComments += 1;
-          if (!dryRun) await this.saveExistingAnnotation(annotation);
+          if (!dryRun) {
+            annotation.annotationComment = canonicalComment;
+            await this.saveExistingAnnotation(annotation);
+          }
         }
 
         const duplicateOf = kept.find((candidate) => this.areImportedDuplicates(candidate, annotation));
@@ -1014,11 +1420,18 @@ var Kanzi = {
           kept.push(annotation);
           continue;
         }
+        const duplicateID = `maintenance:duplicate:${objectID}`;
+        if (!isApproved(duplicateID)) {
+          kept.push(annotation);
+          continue;
+        }
         const mergedComment = this.mergeComments(duplicateOf.annotationComment, annotation.annotationComment);
         if (duplicateOf.annotationComment !== mergedComment) {
-          duplicateOf.annotationComment = mergedComment;
           results.updatedComments += 1;
-          if (!dryRun) await this.saveExistingAnnotation(duplicateOf);
+          if (!dryRun) {
+            duplicateOf.annotationComment = mergedComment;
+            await this.saveExistingAnnotation(duplicateOf);
+          }
         }
         if (!dryRun) await annotation.eraseTx();
         const keptClippingIds = new Set(
@@ -1128,7 +1541,8 @@ var Kanzi = {
     throw new Error("Related item cannot be saved by this Zotero build");
   },
 
-  async addRelatedItemRelations(entries, dryRun, results) {
+  async addRelatedItemRelations(entries, dryRun, results, approvedOperationIDs = null) {
+    const approved = approvedOperationIDs ? new Set(approvedOperationIDs) : null;
     const pairs = new Map();
     for (const entry of entries || []) {
       for (const target of entry.related_items || []) {
@@ -1137,17 +1551,27 @@ var Kanzi = {
         if (!sourceID || !targetID || sourceID === targetID) continue;
         const pairKey = [sourceID, targetID].sort((a, b) => a - b).join(":");
         if (!pairs.has(pairKey)) {
-          pairs.set(pairKey, { sourceID, targetID, citationKey: target.citation_key || "" });
+          pairs.set(pairKey, {
+            sourceID,
+            targetID,
+            citationKey: target.citation_key || "",
+            operationID: `relation:${pairKey}`,
+          });
         }
       }
     }
 
     for (const pair of pairs.values()) {
       try {
+        if (approved && !approved.has(pair.operationID)) continue;
         const source = Zotero.Items.get(pair.sourceID);
         const target = Zotero.Items.get(pair.targetID);
         if (!source || !target) {
           throw new Error(`Related item pair not found: ${pair.sourceID} -> ${pair.targetID}`);
+        }
+        if (source.libraryID !== target.libraryID) {
+          results.relationsUnavailable += 1;
+          continue;
         }
         if (dryRun) {
           results.relationsPlanned += 1;
@@ -1184,16 +1608,17 @@ var Kanzi = {
     }
   },
 
-  async backfillRelationLinks(entries, dryRun, results) {
+  async backfillRelationLinks(entries, dryRun, results, approvedOperationIDs = null) {
     // Appends missing `Related: @key <link>` blocks to pre-existing
     // annotations. Cross-library targets can never become Related items,
     // so the comment link is the only visible connection for them.
+    const approved = approvedOperationIDs ? new Set(approvedOperationIDs) : null;
     for (const entry of entries || []) {
       const targets = entry.related_items || [];
       if (!targets.length || !entry.clipping_id || !entry.attachment_item_id) continue;
-      const block = "Related: " + targets.map(
-        (target) => `@${target.citation_key} ${target.link || ""}`.trim()
-      ).join(" · ");
+      const operationID = `comment-link:${entry.clipping_id}`;
+      if (approved && !approved.has(operationID)) continue;
+      const block = this.relationCommentBlock(entry);
       try {
         const attachment = Zotero.Items.get(entry.attachment_item_id);
         if (!attachment) {
@@ -1226,7 +1651,7 @@ var Kanzi = {
     }
   },
 
-  async reconcileWriterState(path, plan, results) {
+  async reconcileWriterState(path, plan, results, previousPlan = null) {
     const plannedIds = new Set((plan.annotations || []).map((entry) => entry.clipping_id));
     const failedIds = new Set(
       (results.failed || [])
@@ -1235,36 +1660,69 @@ var Kanzi = {
     );
     plan.write_failed_ids = Array.from(failedIds).sort();
     plan.delete_failed_ids = Array.from(new Set(results.failedDeletionIds || [])).sort();
-    const maintenanceDeletedIds = new Set(results.maintenanceDeletedIds || []);
-    if (failedIds.size) {
-      plan.annotations = (plan.annotations || []).filter(
-        (entry) => !failedIds.has(entry.clipping_id)
-      );
-      plan.all_annotations = (plan.all_annotations || []).filter(
-        (entry) => !failedIds.has(entry.clipping_id)
-      );
+    const successfulIds = new Set(
+      results.successfulClippingIds || Array.from(plannedIds).filter((id) => !failedIds.has(id))
+    );
+    const removedIds = new Set([
+      ...(results.successfulDeletionIds || []),
+      ...(results.maintenanceDeletedIds || []),
+    ]);
+    const currentByID = new Map(
+      (plan.annotations || []).map((entry) => [entry.clipping_id, entry])
+    );
+    const generatedByID = new Map(
+      (plan.all_annotations || []).map((entry) => [entry.clipping_id, entry])
+    );
+    const reconciliationExcluded = new Set(plan.reconciliation_excluded_ids || []);
+    const previousHistory = previousPlan?.all_annotations || previousPlan?.annotations || [];
+    const historyByID = new Map(previousHistory.map((entry) => [entry.clipping_id, entry]));
+    for (const [clippingID, generated] of generatedByID) {
+      if (
+        !plannedIds.has(clippingID) &&
+        !reconciliationExcluded.has(clippingID) &&
+        historyByID.has(clippingID)
+      ) {
+        historyByID.set(clippingID, generated);
+      }
     }
-    if (maintenanceDeletedIds.size) {
-      plan.annotations = (plan.annotations || []).filter(
-        (entry) => !maintenanceDeletedIds.has(entry.clipping_id)
-      );
-      plan.all_annotations = (plan.all_annotations || []).filter(
-        (entry) => !maintenanceDeletedIds.has(entry.clipping_id)
-      );
+    for (const clippingID of successfulIds) {
+      const entry = currentByID.get(clippingID);
+      if (entry) historyByID.set(clippingID, entry);
     }
+    for (const clippingID of removedIds) historyByID.delete(clippingID);
+    plan.annotations = (plan.annotations || []).filter((entry) =>
+      successfulIds.has(entry.clipping_id)
+    );
+    plan.all_annotations = Array.from(historyByID.values()).sort((left, right) =>
+      (left.attachment_item_id || 0) - (right.attachment_item_id || 0) ||
+      String(left.annotation?.sortIndex || "").localeCompare(String(right.annotation?.sortIndex || "")) ||
+      String(left.clipping_id || "").localeCompare(String(right.clipping_id || ""))
+    );
+    const deferred = new Set(plan.deferred_clipping_ids || []);
+    for (const clippingID of successfulIds) deferred.delete(clippingID);
+    for (const clippingID of failedIds) deferred.add(clippingID);
+    plan.deferred_clipping_ids = Array.from(deferred).sort();
+    plan.discarded_clipping_ids = Array.from(new Set([
+      ...(previousPlan?.discarded_clipping_ids || []),
+      ...(plan.discarded_clipping_ids || []),
+    ])).sort();
+    const successfulDeletionIDs = new Set(results.successfulDeletionIds || []);
+    plan.deletion_candidates = (plan.deletion_candidates || []).filter(
+      (candidate) => !successfulDeletionIDs.has(candidate.clipping_id)
+    );
+    plan.pending_deletion_candidates = (plan.pending_deletion_candidates || []).filter(
+      (candidate) => !successfulDeletionIDs.has(candidate.clipping_id)
+    );
+    delete plan.reconciliation_excluded_ids;
     plan.delta_annotation_count = (plan.annotations || []).length;
-    plan.annotation_count = (plan.all_annotations || plan.annotations || []).length;
+    plan.annotation_count = plan.all_annotations.length;
     await Zotero.File.putContentsAsync(path, JSON.stringify(plan, null, 2) + "\n");
   },
 
-  async writeAnnotations(plan, dryRun, onProgress) {
-    if (plan.format !== "kindle-zotero-importer.zotero-writer-plan.v1") {
-      throw new Error(`Unsupported plan format: ${plan.format}`);
-    }
-
-    const results = {
-      dryRun,
-      total: plan.annotations.length,
+  emptyWriterResults(total = 0) {
+    return {
+      dryRun: false,
+      total,
       created: 0,
       skippedExisting: 0,
       updatedComments: 0,
@@ -1273,22 +1731,42 @@ var Kanzi = {
       blockedRecreateMissingTag: 0,
       recreateDeclined: 0,
       removedDuplicates: 0,
+      updated: 0,
+      updatedColours: 0,
+      tagsAdded: 0,
       relationsAdded: 0,
       relationsSkipped: 0,
       relationsPlanned: 0,
+      relationsUnavailable: 0,
       commentLinksAdded: 0,
       commentLinksPlanned: 0,
       relationFailures: [],
       deletedForIncremental: 0,
       failedDeletionIds: [],
+      successfulDeletionIds: [],
+      successfulClippingIds: [],
       maintenanceDeletedIds: [],
       failed: [],
     };
+  },
+
+  async writeAnnotations(plan, dryRun, onProgress, approvedOperationIDs = null) {
+    if (plan.format !== "kindle-zotero-importer.zotero-writer-plan.v1") {
+      throw new Error(`Unsupported plan format: ${plan.format}`);
+    }
+
+    const results = this.emptyWriterResults(plan.annotations.length);
+    results.dryRun = dryRun;
     let importedAnnotations = [];
     let maintenanceReady = false;
     try {
       importedAnnotations = await this.collectImportedAnnotations();
-      await this.maintainImportedAnnotations(importedAnnotations, dryRun, results);
+      await this.maintainImportedAnnotations(
+        importedAnnotations,
+        dryRun,
+        results,
+        approvedOperationIDs
+      );
       if (!dryRun && results.removedDuplicates) {
         importedAnnotations = await this.collectImportedAnnotations();
       }
@@ -1305,23 +1783,16 @@ var Kanzi = {
         const byFingerprint = new Map();
 
         for (const annotation of annotations) {
+          if (!this.hasKindleImportTag(annotation)) continue;
           const fingerprint = this.existingAnnotationFingerprint(annotation);
           const kept = byFingerprint.get(fingerprint);
           if (!kept) {
             byFingerprint.set(fingerprint, annotation);
             continue;
           }
-
-          const keptHasComment = Boolean(kept.annotationComment);
-          const currentHasComment = Boolean(annotation.annotationComment);
-          const duplicate = keptHasComment || !currentHasComment ? annotation : kept;
-          const replacement = duplicate === annotation ? kept : annotation;
-
-          byFingerprint.set(fingerprint, replacement);
-          if (!dryRun) {
-            await duplicate.eraseTx();
+          if (!kept.annotationComment && annotation.annotationComment) {
+            byFingerprint.set(fingerprint, annotation);
           }
-          results.removedDuplicates += 1;
         }
 
         existingByAttachment.set(attachment.id, byFingerprint);
@@ -1350,7 +1821,9 @@ var Kanzi = {
         const fingerprint = this.annotationFingerprint(annotation);
         const existingAnnotation = existingAnnotations.get(fingerprint) ||
           Array.from(existingAnnotations.values()).find(
-            (candidate) => this.areImportedDuplicates(candidate, annotation)
+            (candidate) =>
+              this.existingTags(candidate).includes(`kindle-id:${entry.clipping_id}`) &&
+              this.areImportedDuplicates(candidate, annotation)
           );
         if (existingAnnotation) {
           const mergedComment = this.commentForExistingAnnotation(
@@ -1372,6 +1845,7 @@ var Kanzi = {
             existingAnnotation.addTag(name);
             existingTags.add(name);
             changed = true;
+            results.tagsAdded += 1;
           }
 
           // colour update (British spelling in code handles both)
@@ -1383,7 +1857,7 @@ var Kanzi = {
             // some builds use .color
             try { existingAnnotation.color = newColour; } catch (_e) {}
             changed = true;
-            results.updatedComments += 1; // count as updated (or separate if you prefer)
+            results.updatedColours += 1;
           }
 
           const oldSortIndex = this.existingSortIndex(existingAnnotation);
@@ -1412,11 +1886,15 @@ var Kanzi = {
               }
               if (!this.confirmRecreateForSortIndex(entry, existingAnnotation, oldSortIndex, newSortIndex)) {
                 results.recreateDeclined += 1;
-                results.skippedExisting += 1;
+                results.failed.push({
+                  clipping_id: entry.clipping_id,
+                  attachment_item_id: entry.attachment_item_id,
+                  message: "Sort-order update was declined; the existing annotation was preserved",
+                });
                 continue;
               }
-              await existingAnnotation.eraseTx();
               await Zotero.Annotations.saveFromJSON(attachment, annotation);
+              await existingAnnotation.eraseTx();
               existingAnnotations.set(fingerprint, {
                 annotationComment: annotation.comment || "",
                 annotationPosition: annotation.position,
@@ -1425,14 +1903,15 @@ var Kanzi = {
                 annotationText: annotation.text || "",
               });
               results.recreatedForSortIndex += 1;
-              results.skippedExisting += 1;
+              results.updated += 1;
               successfulEntries.set(entry.clipping_id, entry);
               continue;
             }
+            results.updated += 1;
           } else if (sortIndexChanged && dryRun) {
             results.updatedSortIndex += 1;
           }
-          results.skippedExisting += 1;
+          if (!changed) results.skippedExisting += 1;
           successfulEntries.set(entry.clipping_id, entry);
           continue;
         }
@@ -1468,26 +1947,74 @@ var Kanzi = {
       (entry) => !currentIDs.has(entry.clipping_id)
     );
     relationEntries.push(...successfulEntries.values());
-    await this.addRelatedItemRelations(relationEntries, dryRun, results);
-    await this.backfillRelationLinks(relationEntries, dryRun, results);
+    await this.addRelatedItemRelations(
+      relationEntries,
+      dryRun,
+      results,
+      approvedOperationIDs
+    );
+    await this.backfillRelationLinks(
+      relationEntries,
+      dryRun,
+      results,
+      approvedOperationIDs
+    );
 
     if (!dryRun && plan.deletions && plan.deletions.length) {
       const deletionIds = new Set(plan.deletions);
+      const deletionCandidates = new Map(
+        (plan.deletion_candidates || []).map((candidate) => [candidate.clipping_id, candidate])
+      );
       const alreadyDeletedIds = new Set(results.maintenanceDeletedIds);
       if (!maintenanceReady) {
         results.failedDeletionIds.push(...deletionIds);
       } else {
+        const foundDeletionIds = new Set();
         for (const ann of importedAnnotations) {
           for (const tag of this.existingTags(ann)) {
             if (!tag.startsWith("kindle-id:")) continue;
             const id = tag.slice("kindle-id:".length);
             if (!deletionIds.has(id) || alreadyDeletedIds.has(id)) break;
-            const replacement = successfulEntries.get(id);
+            foundDeletionIds.add(id);
+            const candidate = deletionCandidates.get(id);
+            const replacementID = candidate?.replacement_clipping_id;
+            if (replacementID && !successfulEntries.has(replacementID)) {
+              const replacementEntry = (plan.all_annotations || []).find(
+                (entry) => entry.clipping_id === replacementID
+              );
+              const replacementAttachment = replacementEntry
+                ? Zotero.Items.get(replacementEntry.attachment_item_id)
+                : null;
+              const replacementExists = (replacementAttachment?.getAnnotations
+                ? replacementAttachment.getAnnotations()
+                : []
+              ).some((annotation) =>
+                this.existingTags(annotation).includes(`kindle-id:${replacementID}`)
+              );
+              if (!replacementExists) {
+                results.failedDeletionIds.push(id);
+                results.failed.push({
+                  clipping_id: id,
+                  message: `Deletion blocked because replacement ${replacementID} was not applied`,
+                });
+                break;
+              }
+            }
+            const replacement = successfulEntries.get(replacementID || id);
             if (replacement) {
               const sameAttachment = (ann.parentItemID || ann.parentID) === replacement.attachment_item_id;
               const sameFingerprint = this.existingAnnotationFingerprint(ann) ===
                 this.annotationFingerprint(replacement.annotation);
-              if (sameAttachment && sameFingerprint) break;
+              if (sameAttachment && sameFingerprint) {
+                if (replacementID && replacementID !== id) {
+                  if (ann.removeTag) {
+                    ann.removeTag(`kindle-id:${id}`);
+                    await this.saveExistingAnnotation(ann);
+                  }
+                  results.successfulDeletionIds.push(id);
+                }
+                break;
+              }
             } else if ((plan.annotations || []).some((entry) => entry.clipping_id === id)) {
               results.failedDeletionIds.push(id);
               break;
@@ -1495,6 +2022,7 @@ var Kanzi = {
             try {
               await ann.eraseTx();
               results.deletedForIncremental += 1;
+              results.successfulDeletionIds.push(id);
             } catch (error) {
               results.failedDeletionIds.push(id);
               results.failed.push({ clipping_id: id, message: `Deletion failed: ${error}` });
@@ -1502,8 +2030,15 @@ var Kanzi = {
             break;
           }
         }
+        for (const id of deletionIds) {
+          if (!foundDeletionIds.has(id) && !results.failedDeletionIds.includes(id)) {
+            results.successfulDeletionIds.push(id);
+          }
+        }
       }
     }
+
+    results.successfulClippingIds = Array.from(successfulEntries.keys());
 
     return results;
   },

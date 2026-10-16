@@ -160,6 +160,9 @@ def test_citekey_mentions_become_zotero_links():
             "key": "TARGET02",
             "citation_key": "bookb2020",
             "link": "zotero://select/library/items/TARGET02",
+            "title": "Book B",
+            "library_id": None,
+            "group_id": None,
         }
     ]
     # self-links are skipped
@@ -202,6 +205,9 @@ def test_historical_annotations_gain_citekey_relations():
             "key": "TARGET02",
             "citation_key": "deleuze1983",
             "link": "zotero://select/library/items/TARGET02",
+            "title": None,
+            "library_id": None,
+            "group_id": None,
         }
     ]
 
@@ -220,6 +226,49 @@ def test_group_library_targets_use_group_select_links():
         _select_link({"key": "ABC123"})
         == "zotero://select/library/items/ABC123"
     )
+
+
+def test_zotero_group_metadata_is_indexed():
+    import sqlite3
+    from kindle_zotero_importer.zotero_index import _load_groups
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        "CREATE TABLE groups (groupID INTEGER, libraryID INTEGER)"
+    )
+    connection.execute(
+        "INSERT INTO groups (groupID, libraryID) VALUES (6644344, 8)"
+    )
+    try:
+        assert _load_groups(connection) == {8: 6644344}
+    finally:
+        connection.close()
+
+
+def test_duplicate_citekey_prefers_source_library_without_guessing():
+    from kindle_zotero_importer.import_plan import _related_items_for_citekeys
+
+    index = {
+        "items": [
+            {"item_id": 1, "key": "SOURCE", "library_id": 4, "fields": {"citationKey": "source2020"}},
+            {"item_id": 2, "key": "SAME", "library_id": 4, "fields": {"citationKey": "shared2020"}},
+            {"item_id": 3, "key": "OTHER", "library_id": 9, "fields": {"citationKey": "shared2020"}},
+        ]
+    }
+    items_by_id = {item["item_id"]: item for item in index["items"]}
+    related = _related_items_for_citekeys(("See @shared2020",), 1, items_by_id)
+    assert [item["item_id"] for item in related] == [2]
+
+    index["items"].append(
+        {"item_id": 4, "key": "SAME2", "library_id": 4, "fields": {"citationKey": "shared2020"}}
+    )
+    items_by_id = {item["item_id"]: item for item in index["items"]}
+    ambiguities = []
+    assert _related_items_for_citekeys(
+        ("See @shared2020",), 1, items_by_id, ambiguities
+    ) == []
+    assert ambiguities == ["shared2020"]
 
 
 def test_epub_tolerates_extraction_artifacts():

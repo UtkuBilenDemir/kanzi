@@ -125,8 +125,11 @@ def _plan_clipping(
     )
     status = "ready-for-positioning" if attachment else attachment_status
     stub = _annotation_stub(clipping, colour_map) if attachment else None
+    ambiguous_citekeys: list[str] = []
     related_items = (
-        _append_citekey_links(stub, clipping, zotero_item, items_by_id)
+        _append_citekey_links(
+            stub, clipping, zotero_item, items_by_id, ambiguous_citekeys
+        )
         if stub
         else []
     )
@@ -138,6 +141,8 @@ def _plan_clipping(
             "parent_item_id": zotero_item["item_id"],
             "parent_key": zotero_item["key"],
             "parent_title": zotero_item.get("title"),
+            "library_id": zotero_item.get("library_id"),
+            "group_id": zotero_item.get("group_id"),
             "citation_key": zotero_item["fields"].get("citationKey"),
             "doi": zotero_item["fields"].get("DOI"),
             "isbn": zotero_item["fields"].get("ISBN"),
@@ -145,6 +150,7 @@ def _plan_clipping(
             "url": zotero_item["fields"].get("url"),
             "publication_title": zotero_item["fields"].get("publicationTitle"),
             "related_items": related_items,
+            "ambiguous_citekeys": ambiguous_citekeys,
             "attachment": attachment,
             "attachment_choices": zotero_item.get("attachments", []),
             "expected_attachment_type": _expected_attachment_type(
@@ -161,6 +167,7 @@ def _append_citekey_links(
     clipping: dict[str, Any],
     parent_item: dict[str, Any],
     items_by_id: dict[int, dict[str, Any]],
+    ambiguous_citekeys: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Turn `@citekey` mentions into clickable Zotero item links.
 
@@ -173,6 +180,7 @@ def _append_citekey_links(
         (clipping.get("text") or "", clipping.get("comment") or ""),
         parent_item.get("item_id"),
         items_by_id,
+        ambiguous_citekeys,
     )
     links = [
         f"@{target['citation_key']} {target['link']}" for target in related_items
@@ -202,6 +210,7 @@ def _related_items_for_citekeys(
     sources: tuple[str, ...],
     parent_item_id: int | None,
     items_by_id: dict[int, dict[str, Any]],
+    ambiguous_citekeys: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     tokens = {
         token.casefold()
@@ -210,15 +219,31 @@ def _related_items_for_citekeys(
     }
     if not tokens:
         return []
-    by_citekey = {
-        str(item.get("fields", {}).get("citationKey", "")).casefold(): item
-        for item in items_by_id.values()
-        if item.get("fields", {}).get("citationKey")
-    }
+    by_citekey: dict[str, list[dict[str, Any]]] = {}
+    for item in items_by_id.values():
+        citation_key = item.get("fields", {}).get("citationKey")
+        if citation_key:
+            by_citekey.setdefault(str(citation_key).casefold(), []).append(item)
+    parent = items_by_id.get(parent_item_id) if parent_item_id else None
+    parent_library_id = (parent or {}).get("library_id")
     related = []
     seen_item_ids = set()
     for token in sorted(tokens):
-        target = by_citekey.get(token)
+        candidates = by_citekey.get(token, [])
+        same_library = [
+            item
+            for item in candidates
+            if item.get("library_id") == parent_library_id
+        ]
+        if len(same_library) == 1:
+            target = same_library[0]
+        elif not same_library and len(candidates) == 1:
+            target = candidates[0]
+        else:
+            # Never choose arbitrarily when duplicate citekeys remain ambiguous.
+            target = None
+            if candidates and ambiguous_citekeys is not None:
+                ambiguous_citekeys.append(token)
         target_id = target.get("item_id") if target else None
         if not target or target_id == parent_item_id or target_id in seen_item_ids:
             continue
@@ -229,6 +254,9 @@ def _related_items_for_citekeys(
                 "key": target["key"],
                 "citation_key": target["fields"]["citationKey"],
                 "link": _select_link(target),
+                "title": target.get("title"),
+                "library_id": target.get("library_id"),
+                "group_id": target.get("group_id"),
             }
         )
     return related

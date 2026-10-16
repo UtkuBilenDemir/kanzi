@@ -218,6 +218,7 @@ async function testMaintenanceSweep() {
     parentItemID: 10,
     annotationText: text,
     annotationComment: comment,
+    annotationTags: [{ name: 'kindle-import' }],
     annotationPosition: JSON.stringify({
       type: 'FragmentSelector',
       value: `epubcfi(/6/12!/4/2/8,/1:795,/1:${end})`,
@@ -245,9 +246,11 @@ async function testMaintenanceSweep() {
     type: 'FragmentSelector',
     value: 'epubcfi(/6/12!/4/2/8,/1:3000,/1:3050)',
   });
+  const manual = annotation(6, 'A progressive highlight long enough to compare', 994, '[r] manual note');
+  manual.annotationTags = [];
   const results = { updatedComments: 0, removedDuplicates: 0 };
 
-  await plugin.maintainImportedAnnotations([short, middle, longest, separate, emptyComment], false, results);
+  await plugin.maintainImportedAnnotations([short, middle, longest, separate, emptyComment, manual], false, results);
 
   assert.equal(results.removedDuplicates, 2);
   assert.deepEqual(Array.from(results.maintenanceDeletedIds), []);
@@ -256,8 +259,151 @@ async function testMaintenanceSweep() {
   assert.equal(longest.erased, 0);
   assert.equal(separate.erased, 0);
   assert.equal(emptyComment.saved, 0);
+  assert.equal(manual.erased, 0);
+  assert.equal(manual.saved, 0);
   assert.equal(longest.annotationComment, 'useful note');
   assert.equal(results.updatedComments, 1);
+}
+
+async function testMaintenanceRequiresApproval() {
+  const annotation = (id, comment) => ({
+    id,
+    parentItemID: 10,
+    annotationText: `Distinct annotation ${id}`,
+    annotationComment: comment,
+    annotationPosition: JSON.stringify({ pageIndex: id, rects: [[1, 2, 3, 4]] }),
+    annotationTags: [{ name: 'kindle-import' }],
+    saved: 0,
+    saveTx: async function () { this.saved += 1; },
+  });
+  const approved = annotation(21, '[r] duplicate note\n\nduplicate note');
+  const declined = annotation(22, '[r] leave this as written');
+  const results = { updatedComments: 0, removedDuplicates: 0 };
+  await plugin.maintainImportedAnnotations(
+    [approved, declined],
+    false,
+    results,
+    ['maintenance:comment:21']
+  );
+  assert.equal(approved.annotationComment, 'duplicate note');
+  assert.equal(approved.saved, 1);
+  assert.equal(declined.annotationComment, '[r] leave this as written');
+  assert.equal(declined.saved, 0);
+}
+
+async function testReviewModelCoversEveryMutationCategory() {
+  const originalZotero = bootstrapContext.Zotero;
+  const originalCollect = plugin.collectImportedAnnotations;
+  let attachmentAnnotations = [];
+  const attachment = { id: 11, getAnnotations: () => attachmentAnnotations };
+  const items = {
+    1: { id: 1, key: 'SOURCE', libraryID: 1 },
+    2: { id: 2, key: 'SAME', libraryID: 1 },
+    3: { id: 3, key: 'CROSS', libraryID: 2 },
+    11: attachment,
+  };
+  bootstrapContext.Zotero = { Items: { get: id => items[id] || null } };
+  const imported = {
+    id: 31,
+    parentItemID: 11,
+    annotationText: 'Imported text',
+    annotationComment: '[r] note\n\nnote',
+    annotationPosition: JSON.stringify({ pageIndex: 1, rects: [[1, 2, 3, 4]] }),
+    annotationTags: [{ name: 'kindle-import' }],
+  };
+  const entry = {
+    clipping_id: 'new',
+    clipping_title: 'Source book',
+    attachment_item_id: 11,
+    parent_item_id: 1,
+    parent_title: 'Source item',
+    citation_key: 'source2020',
+    library_id: 1,
+    annotation: { text: 'New highlight', pageLabel: '4', color: '#ffd400', comment: '' },
+    related_items: [
+      { item_id: 2, key: 'SAME', title: 'Same library', citation_key: 'same2020', library_id: 1, link: 'zotero://select/library/items/SAME' },
+      { item_id: 3, key: 'CROSS', title: 'Other library', citation_key: 'cross2020', library_id: 2, link: 'zotero://select/groups/2/items/CROSS' },
+    ],
+  };
+  try {
+    const historicalEntry = {
+      ...entry,
+      clipping_id: 'history',
+      ambiguous_citekeys: ['duplicate2020'],
+      annotation: { ...entry.annotation, text: 'Historical highlight' },
+    };
+    const historicalAnnotation = {
+      annotationComment: '',
+      annotationTags: [{ name: 'kindle-import' }, { name: 'kindle-id:history' }],
+    };
+    attachmentAnnotations = [historicalAnnotation];
+    plugin.collectImportedAnnotations = async () => [imported];
+    const review = await plugin.buildReviewModel({
+      annotations: [entry],
+      all_annotations: [entry, historicalEntry],
+      deletion_candidates: [
+        { clipping_id: 'old', replacement_clipping_id: 'new', reason: 'source-revision', blocked: false },
+        { clipping_id: 'blocked', replacement_clipping_id: 'missing', reason: 'source-revision', blocked: true },
+      ],
+    }, null);
+    assert.equal(review.annotations.length, 1);
+    assert.equal(review.maintenance.length, 1);
+    assert.equal(review.deletions.length, 2);
+    assert.equal(review.relations.length, 1);
+    assert.equal(review.commentLinks.length, 2);
+    assert.equal(review.warnings.length, 1);
+    assert.equal(review.deletions.filter(operation => operation.blocked).length, 1);
+    assert.ok(review.commentLinks[0].action.includes('unavailable across libraries'));
+    assert.equal(
+      review.commentLinks.find(operation => operation.clipping_id === 'new').depends_on_clipping_id,
+      'new'
+    );
+    assert.ok(review.annotations[0].destination.label.includes('Source item'));
+  } finally {
+    bootstrapContext.Zotero = originalZotero;
+    plugin.collectImportedAnnotations = originalCollect;
+  }
+}
+
+async function testUnchangedPlanProducesNoOperations() {
+  const originalZotero = bootstrapContext.Zotero;
+  const originalCollect = plugin.collectImportedAnnotations;
+  const position = { pageIndex: 1, rects: [[1, 2, 3, 4]] };
+  const existing = {
+    annotationText: 'Already present',
+    annotationPosition: JSON.stringify(position),
+    annotationComment: 'note',
+    annotationColor: '#ffd400',
+    annotationSortIndex: '0001',
+    annotationTags: [{ name: 'kindle-import' }, { name: 'kindle-id:same' }],
+  };
+  bootstrapContext.Zotero = {
+    Items: { get: id => id === 11 ? { id: 11, getAnnotations: () => [existing] } : null },
+  };
+  plugin.collectImportedAnnotations = async () => [];
+  try {
+    const review = await plugin.buildReviewModel({
+      annotations: [{
+        clipping_id: 'same',
+        attachment_item_id: 11,
+        annotation: {
+          text: 'Already present',
+          position,
+          comment: 'note',
+          color: '#ffd400',
+          sortIndex: '0001',
+          tags: [{ name: 'kindle-import' }, { name: 'kindle-id:same' }],
+        },
+      }],
+      all_annotations: [],
+      deletion_candidates: [],
+    });
+    assert.equal(review.operation_count, 0);
+    assert.deepEqual(Array.from(review.annotations), []);
+  } finally {
+    bootstrapContext.Zotero = originalZotero;
+    plugin.collectImportedAnnotations = originalCollect;
+  }
 }
 
 async function testWriterReconciliation() {
@@ -384,6 +530,63 @@ async function testReplacementFailurePreservesOldAnnotationAndDeletionRetry() {
   assert.equal(results.failed[0].clipping_id, 'replacement');
 }
 
+async function testSuccessfulReplacementCreatesBeforeDeletingOldAnnotation() {
+  const originalZotero = bootstrapContext.Zotero;
+  const originalCollect = plugin.collectImportedAnnotations;
+  const originalMaintain = plugin.maintainImportedAnnotations;
+  const old = {
+    parentItemID: 11,
+    annotationText: 'A progressive highlight long enough to compare',
+    annotationPosition: JSON.stringify({
+      type: 'FragmentSelector',
+      value: 'epubcfi(/6/12!/4/2/8,/1:10,/1:60)',
+    }),
+    annotationComment: '',
+    annotationTags: [{ name: 'kindle-import' }, { name: 'kindle-id:old' }],
+    erased: 0,
+    eraseTx: async function () { this.erased += 1; },
+  };
+  const attachment = { id: 11, getAnnotations: () => [old] };
+  let created = 0;
+  bootstrapContext.Zotero = {
+    Items: { get: id => id === 11 ? attachment : null },
+    DataObjectUtilities: { generateKey: () => 'NEWKEY01' },
+    Annotations: { saveFromJSON: async () => { created += 1; } },
+    logError: () => {},
+  };
+  plugin.collectImportedAnnotations = async () => [old];
+  plugin.maintainImportedAnnotations = async () => {};
+  try {
+    const results = await plugin.writeAnnotations({
+      format: 'kindle-zotero-importer.zotero-writer-plan.v1',
+      annotations: [{
+        clipping_id: 'new',
+        attachment_item_id: 11,
+        annotation: {
+          text: 'A progressive highlight long enough to compare and then extend',
+          position: {
+            type: 'FragmentSelector',
+            value: 'epubcfi(/6/12!/4/2/8,/1:10,/1:90)',
+          },
+          comment: '',
+          tags: [{ name: 'kindle-import' }, { name: 'kindle-id:new' }],
+        },
+      }],
+      all_annotations: [],
+      deletions: ['old'],
+      deletion_candidates: [{ clipping_id: 'old', replacement_clipping_id: 'new' }],
+    }, false);
+    assert.equal(created, 1);
+    assert.equal(old.erased, 1);
+    assert.deepEqual(Array.from(results.successfulClippingIds), ['new']);
+    assert.deepEqual(Array.from(results.successfulDeletionIds), ['old']);
+  } finally {
+    bootstrapContext.Zotero = originalZotero;
+    plugin.collectImportedAnnotations = originalCollect;
+    plugin.maintainImportedAnnotations = originalMaintain;
+  }
+}
+
 async function testCitekeyRelationsAreBidirectionalAndAdditive() {
   const originalZotero = bootstrapContext.Zotero;
   const originalCollect = plugin.collectImportedAnnotations;
@@ -467,6 +670,65 @@ async function testCitekeyRelationsAreBidirectionalAndAdditive() {
   }
 }
 
+async function testCrossLibraryRelationUsesCommentLinkOnly() {
+  const originalZotero = bootstrapContext.Zotero;
+  const originalCollect = plugin.collectImportedAnnotations;
+  const originalMaintain = plugin.maintainImportedAnnotations;
+  const source = {
+    id: 1,
+    key: 'SOURCE01',
+    libraryID: 1,
+    saved: 0,
+    addRelatedItem: () => { throw new Error('must not add a cross-library relation'); },
+    save: async function () { this.saved += 1; },
+  };
+  const target = {
+    id: 2,
+    key: 'TARGET02',
+    libraryID: 2,
+    saved: 0,
+    addRelatedItem: () => { throw new Error('must not add a cross-library relation'); },
+    save: async function () { this.saved += 1; },
+  };
+  const existingAnnotation = {
+    annotationComment: '',
+    annotationTags: [{ name: 'kindle-import' }, { name: 'kindle-id:history-cross' }],
+    saved: 0,
+    saveTx: async function () { this.saved += 1; },
+  };
+  const attachment = { id: 11, getAnnotations: () => [existingAnnotation] };
+  bootstrapContext.Zotero = {
+    Items: { get: id => id === 1 ? source : id === 2 ? target : id === 11 ? attachment : null },
+    DB: { executeTransaction: async callback => callback() },
+    logError: () => {},
+  };
+  plugin.collectImportedAnnotations = async () => [existingAnnotation];
+  plugin.maintainImportedAnnotations = async () => {};
+  try {
+    const results = await plugin.writeAnnotations({
+      format: 'kindle-zotero-importer.zotero-writer-plan.v1',
+      annotations: [],
+      all_annotations: [{
+        clipping_id: 'history-cross',
+        parent_item_id: 1,
+        attachment_item_id: 11,
+        related_items: [{ item_id: 2, key: 'TARGET02', citation_key: 'target2020', link: 'zotero://select/groups/2/items/TARGET02' }],
+      }],
+      deletions: [],
+    }, false);
+    assert.equal(results.relationsAdded, 0);
+    assert.equal(results.relationsUnavailable, 1);
+    assert.equal(source.saved, 0);
+    assert.equal(target.saved, 0);
+    assert.equal(results.commentLinksAdded, 1);
+    assert.ok(existingAnnotation.annotationComment.includes('zotero://select/groups/2/items/TARGET02'));
+  } finally {
+    bootstrapContext.Zotero = originalZotero;
+    plugin.collectImportedAnnotations = originalCollect;
+    plugin.maintainImportedAnnotations = originalMaintain;
+  }
+}
+
 function testPendingReviewGrouping() {
   const groups = manager.groupPendingAnnotations([
     { clipping_id: 'a1', clipping_title: 'Dune (Frank Herbert)', citation_key: 'herbert2020', annotation: { text: 'spice', pageLabel: '12', color: '#ffd400' } },
@@ -513,6 +775,79 @@ function testFilterPlanForSelection() {
   );
   assert.deepEqual(Array.from(deferred.deferred_clipping_ids), ['earlier', 'keep', 'skip']);
   assert.deepEqual(Array.from(deferred.all_annotations, a => a.clipping_id), ['old']);
+  const deferredDeletion = plugin.deferPendingPlan(
+    { all_annotations: [{ clipping_id: 'old' }] },
+    { deletion_candidates: [{ clipping_id: 'old', replacement_clipping_id: 'new' }] },
+    ['new']
+  );
+  assert.equal(deferredDeletion.pending_deletion_candidates[0].replacement_clipping_id, 'new');
+
+  const replacementPlan = {
+    annotations: [{ clipping_id: 'new' }],
+    all_annotations: [{ clipping_id: 'new' }],
+    deletions: ['old'],
+    deletion_candidates: [{ clipping_id: 'old', replacement_clipping_id: 'new', blocked: false }],
+  };
+  const withoutReplacement = plugin.filterPlanForSelection(
+    replacementPlan,
+    ['new'],
+    [],
+    { all_annotations: [{ clipping_id: 'old' }] }
+  );
+  assert.deepEqual(Array.from(withoutReplacement.deletion_candidates), []);
+  assert.deepEqual(Array.from(withoutReplacement.deletions), []);
+  assert.equal(withoutReplacement.pending_deletion_candidates.length, 1);
+  const withReplacement = plugin.filterPlanForSelection(
+    replacementPlan,
+    ['new'],
+    ['new'],
+    { all_annotations: [{ clipping_id: 'old' }] }
+  );
+  assert.equal(withReplacement.deletion_candidates.length, 1);
+
+  const relationPlan = {
+    annotations: [{ clipping_id: 'new' }],
+    all_annotations: [{
+      clipping_id: 'new',
+      parent_item_id: 1,
+      related_items: [{ item_id: 2 }],
+    }],
+    deletion_candidates: [],
+  };
+  const relationOnly = plugin.filterPlanForSelection(
+    relationPlan,
+    ['new'],
+    [],
+    { all_annotations: [] },
+    [],
+    ['relation:1:2']
+  );
+  assert.deepEqual(Array.from(relationOnly.annotations), []);
+  assert.equal(relationOnly.all_annotations.length, 1);
+
+  const linkedEntry = {
+    clipping_id: 'linked',
+    annotation: { comment: 'Kindle note\n\nRelated: @target zotero://select/library/items/TARGET' },
+    related_items: [{ citation_key: 'target', link: 'zotero://select/library/items/TARGET' }],
+  };
+  const withoutLink = plugin.filterPlanForSelection(
+    { annotations: [linkedEntry], all_annotations: [linkedEntry], deletion_candidates: [] },
+    ['linked'],
+    ['linked'],
+    null,
+    [],
+    ['annotation:linked']
+  );
+  assert.equal(withoutLink.annotations[0].annotation.comment, 'Kindle note');
+  const withLink = plugin.filterPlanForSelection(
+    { annotations: [linkedEntry], all_annotations: [linkedEntry], deletion_candidates: [] },
+    ['linked'],
+    ['linked'],
+    null,
+    [],
+    ['annotation:linked', 'comment-link:linked']
+  );
+  assert.ok(withLink.annotations[0].annotation.comment.includes('Related: @target'));
 }
 
 function testTitleCountsAreAuthoritative() {
@@ -696,13 +1031,18 @@ testRuntimeExtraction()
   .then(testSaveOverrideUsesSourceCount)
   .then(testDiscardClipPersists)
   .then(testMaintenanceSweep)
+  .then(testMaintenanceRequiresApproval)
+  .then(testReviewModelCoversEveryMutationCategory)
+  .then(testUnchangedPlanProducesNoOperations)
   .then(testWriterReconciliation)
   .then(testDeletionFailureIsRetried)
   .then(testMaintenanceDeletionIsNotRepeated)
   .then(testSameClippingDuplicateKeepsLogicalHistoryAndDeletesSurvivor)
   .then(testEnumerationFailurePersistsAllDeletions)
   .then(testReplacementFailurePreservesOldAnnotationAndDeletionRetry)
+  .then(testSuccessfulReplacementCreatesBeforeDeletingOldAnnotation)
   .then(testCitekeyRelationsAreBidirectionalAndAdditive)
+  .then(testCrossLibraryRelationUsesCommentLinkOnly)
   .then(() => {
   console.log('manager and annotation logic ok');
 }).catch(error => {

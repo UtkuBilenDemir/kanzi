@@ -1,120 +1,230 @@
-> [!CAUTION]
-> **This project has been heavily vibecoded.**
+# Kanzi - Kindle annotations to Zotero importer
 
-# Kanzi — `K`indle `an`notations to `Z`otero `I`mporter
+Kanzi imports highlights and notes from Kindle's cumulative `My Clippings.txt` file as native annotations on PDF and EPUB attachments in Zotero.
 
-Import Kindle `My Clippings.txt` highlights into Zotero as native annotations, directly inside Zotero. Once the required host tools are installed, imports run from the manager without CLI commands. Formerly *Kindle Zotero Importer*.
+It works with books and documents copied to a Kindle manually, not only purchases associated with an Amazon account. Imports run from Zotero after the required host tools are installed.
 
-<p align="center">
+> [!IMPORTANT]
+> Kanzi shows a complete review before changing Zotero. Preparing a review is read-only. You choose which annotation additions, updates, removals, maintenance actions, item relations, and comment links to apply.
 
-<a href="https://github.com/sponsors/UtkuBilenDemir"><img src="https://img.shields.io/badge/please%20give%20me%20money+-111111?style=flat-square" alt="please give me money+"></a>
+## What Kanzi does
 
-</p>
+- Matches Kindle document titles to Zotero items.
+- Finds the highlighted text in attached PDFs and EPUBs.
+- Creates native Zotero annotations at the matched position.
+- Imports Kindle notes and optional colour codes.
+- Remembers completed work so normal imports process only changes.
+- Lets you resolve uncertain title or attachment matches without a terminal.
+- Turns `@citekey` references into Zotero links and same-library Related items.
+- Preserves manual Zotero annotations and manual additions to imported comments.
 
-# Install
+Kanzi never writes directly to `zotero.sqlite`. All Zotero changes use Zotero's own annotation and item APIs.
 
-1. Download `kanzi.xpi` from [Releases](https://github.com/UtkuBilenDemir/kanzi/releases) (latest `0.7.0`).
-2. In Zotero: `Tools` → `Plugins` → `gear` → `Install Plugin From File…` → pick the `.xpi` → restart Zotero.
-3. `Tools` → `Kanzi…` to open the manager.
+## Requirements
 
-Works with Zotero 7 to 10. Kanzi packages its importer source, but requires Python 3.11 or newer on the host. EPUB imports need no external positioning tools. PDF imports additionally require Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`); `qpdf` is recommended for encrypted PDFs. Kanzi detects standard Python installations automatically on macOS, Linux and Windows.
+- Zotero 7 through 10.
+- Python 3.11 or newer.
+- EPUB imports: no additional positioning tools.
+- PDF imports: Poppler tools `pdftotext`, `pdftohtml`, and `pdfinfo`.
+- Encrypted PDFs: `qpdf` is recommended as a fallback.
 
-## Windows
+Kanzi detects standard Python installations on macOS, Linux, and Windows. Paths can also be set under `Kanzi -> Settings`.
 
-Open PowerShell and install the host tools:
+## Install
+
+1. Download `kanzi.xpi` from the [latest release](https://github.com/UtkuBilenDemir/kanzi/releases/latest) (`0.7.2`).
+2. Open Zotero and select `Tools -> Plugins`.
+3. Open the gear menu and choose `Install Plugin From File...`.
+4. Select `kanzi.xpi`, then restart Zotero.
+5. Open `Tools -> Kanzi...`.
+
+### macOS
+
+With Homebrew:
+
+```sh
+brew install python poppler qpdf
+```
+
+### Windows
+
+Open PowerShell:
 
 ```powershell
 winget install --id Python.Python.3.13 --exact
 winget install --id oschwartz10612.Poppler --exact
-winget install --id QPDF.QPDF --exact  # Optional: handles copy-protected PDFs
+winget install --id QPDF.QPDF --exact
 ```
 
-Fully quit and reopen Zotero after installation so it receives the updated `PATH`, then install `kanzi.xpi` and open `Tools` → `Kanzi…`. Kanzi checks standard per-user and system Python locations as well as `PATH`; you should not need to enter an executable path manually. EPUB-only imports require Python but not Poppler.
-
-To verify the installation in a new PowerShell window:
+Fully quit and reopen Zotero after installation so it receives the updated `PATH`. To verify the tools in a new PowerShell window:
 
 ```powershell
 python --version
 pdftotext -v
 pdftohtml -v
 pdfinfo -v
-qpdf --version  # Optional
+qpdf --version
 ```
 
-# Use
-
-1. **Choose your file.** Click `Choose My Clippings.txt` and pick your *cumulative* `My Clippings.txt` from Kindle (`Documents/My Clippings.txt`). Keep the window open. You will see live progress.
-2. **Review before writing.** New highlights are grouped by title and selected by default. Untick individual highlights or whole titles, then press `Integrate selected`. Skipped highlights return on the next run. `Cancel` and closing the manager write nothing to Zotero and do not mark pending highlights as integrated.
-3. **Check Integrated.** After integration, `Integrated` shows what was imported. Columns are `Highlight Text`, `Citekey`, `Added On`, `Integrated` and `Page`. Use the filter to find anything.
-4. **Fix Conflicts.** If a Kindle title did not match a Zotero item, `Conflicts` shows one expandable row for that title with up to three suggestions `citekey · title (score%)`. Expand it to inspect individual highlights and positioning problems. Click `Use` on the right candidate, enter a citation key, Zotero key or item ID under `Use Custom`, or choose `Ignore Title`. Tables can be sorted and resized.
-5. **Re-import.** After you have fixed one or more titles, click `Re-import with saved overrides`. It reuses the last file, or asks for it. Only new, changed, deferred or removed highlights are processed. Already integrated ones are skipped, so the second run is fast. Use `Retry unresolved attachments and positions` for prior failures without rebuilding successful annotations. Tick `Full re-import from scratch` only if you want to rebuild everything.
-6. **Mappings.** See all titles you have approved or ignored, newest first, with date. Use `Delete` to send any entry back to `Conflicts` for rematching.
-7. **Settings and Artifacts.** Change `Python` or `Zotero DB` paths and `Save Settings`. Or use `Open` or `Reveal` for any generated file, such as `mismatch-review.md` or `match-overrides.json`.
-
-Your choices are saved in `match-overrides.json` in Kanzi's private runtime folder inside your Zotero profile. Back it up or delete an entry to undo a mapping; it is excluded from Git because it contains your document titles.
-
-# Coloured highlights
-
-You can specify the colour of your highlights while writing the note by adding a bracket at the start.
-
-Write `[o] This is orange` on Kindle, either as the highlight itself or as the note attached to it. Kanzi strips the bracket and imports the highlight in that colour. For example, `[o] This is orange` becomes orange highlight with text `This is orange`. If the note is `[r] important`, the highlight turns red and the note becomes `important`.
-
-All codes are single letters and unique:
-
-| Code | Full name | Hex | Colour |
-|------|-----------|-----|--------|
-| `y` | `yellow` | `#ffd400` | yellow |
-| `o` | `orange` | `#ff8c00` | orange |
-| `r` | `red` | `#ff6666` | red |
-| `e` | `grey` / `gray` | `#8a8a8a` | grey |
-| `g` | `green` | `#5fb236` | green |
-| `b` | `blue` | `#2ea8e5` | blue |
-| `p` | `purple` | `#a28ae5` | purple |
-| `m` | `magenta` / `pink` | `#e56eee` | magenta |
-
-Both `[o]` and `[orange]` work, case is not sensitive, and space after the bracket is ignored. Change any mapping in `Settings` → `Highlight colours` using the hex picker and preview. Use `+ Add mapping` or `Reset to defaults`. British spelling is used throughout.
-
-# Tips
-
-* Keep `My Clippings.txt` cumulative. Do not clear it on the Kindle. The importer remembers what is already integrated via `kindle-id:<hash>` tags, so re-imports are incremental.
-* If a highlight is in the wrong place, check that the Zotero item has the correct PDF or EPUB attached, not a link. `Matched-title-no-attachment` in `Conflicts` means that.
-* `Full re-import` is only needed if you changed many mappings at once or want to rebuild from scratch.
-* Past highlights will recolour incrementally when you add a bracket code to them, or when you change the colour map in Settings. Otherwise use `Full re-import` to recolour everything.
-
-# Detailed Guide
-
-`Tools` → `Kanzi…` opens the manager.
-
-**Summary.** Shows `clippings`, `unique titles`, `final annotations` and `conflicts`. Also `Match Statuses` and `Plan Statuses`. The run panel shows `Choose My Clippings.txt`, progress, stage and detail, and the `Full re-import` checkbox. After positioning, the pending review lets you select exactly what is written to Zotero.
-
-**Integrated.** All annotations remembered in `import-plan.final.json`. Columns are `Kindle Title`, `Citekey`, `Highlight Text`, `Added On`, `Integrated` and `Page` with colour swatch. Filter at the top right; results are resizable and paginated.
-
-**Conflicts.** One row per unresolved Kindle title, combining title-match and attachment/position statuses. Expand a row to inspect its highlights and positioning problems. `Candidates` shows `N suggestion(s) — top: citekey (score%)`. Each candidate has a `Use` button. Below that is `Use Custom` and `Ignore Title`. Saving shows the `Re-import` bar. Columns are sortable and resizable.
-
-**Mappings.** Persistent `match-overrides.json`. Columns are `Kindle Title`, `Resolution`, `Status`, `Count` and `Updated`. Use `Delete` to send it back to `Conflicts`. Filterable.
-
-**Settings.** `Project directory`, `Python`, `Zotero DB`, `Zotero storage`, annotation sharing, and `Highlight colours` as above. Sharing is off until you explicitly opt in and can be disabled here at any time. `Save Settings` writes `plugin-config.json` and `colour-map.json` for the pipeline. No restart is needed.
-
-**Artifacts.** `Mismatch review`, `Persistent overrides`, `Generated suggestions`, `Positioned plan`, `Final writer plan` and `Plugin summary`. Each has `Open` and `Reveal`.
-
-Incremental is default. Only new, changed or colour-changed highlights are repositioned.
-
-# For developers / CLI
+### Debian and Ubuntu
 
 ```sh
-python scripts/build_plugin.py  # → dist/kanzi.xpi, including the Python runtime
-python -m kindle_zotero_importer run "/path/to/My Clippings.txt" --workdir . --pretty
-python -m kindle_zotero_importer run ... --full  # ignore incremental and reprocess all
+sudo apt install python3 poppler-utils qpdf
 ```
 
-PDF positioning uses host-installed Poppler (`pdftotext`, `pdftohtml`, `pdfinfo`) plus `qpdf` fallback. EPUB uses CFI. Zotero writes are only via `Zotero.Annotations`. It never writes `zotero.sqlite` directly.
+## First import
 
-# Releases
+Keep `My Clippings.txt` cumulative. On a connected Kindle it is normally at `Documents/My Clippings.txt`.
 
-Stable releases are on `Releases` with `kanzi.xpi` and `updates.json` attached. Pre-releases (`beta`) are marked `Pre-release` on GitHub. Zotero auto-updates from `releases/latest/download/updates.json`.
+### 1. Prepare
 
-# Support
+Open `Tools -> Kanzi...`, choose one run mode, then select `My Clippings.txt`:
 
-Issues and pull requests welcome at [Issues](../../issues).
+- **Update changes (recommended):** process new, changed, removed, deferred, or previously failed clippings.
+- **Update changes and try unresolved again:** also retry titles, attachments, and positions that previously failed.
+- **Recheck all clippings:** rebuild every plan entry while reusing existing Zotero annotations instead of duplicating them.
 
-Annotation sharing is off until you explicitly opt in. If enabled, it sends a random pseudonymous installation ID, citation key and publication metadata (including DOI/ISBN when available), raw highlight text and comments, normalised/fuzzy hashes, colour, and dates to `annotation.utkubilen.de`. The collector does not receive your Zotero account identity, but free text can contain identifying information and therefore is not anonymous. Change this any time in `Manager` → `Settings`.
+Kanzi reads the files and builds a preview. Zotero is not changed during this stage.
+
+### 2. Review
+
+The review lists every proposed mutation by category:
+
+- Annotation additions and updates, grouped by Kindle title.
+- Kanzi annotation maintenance, such as merging tagged duplicates.
+- Annotation removals, including why each removal is proposed.
+- Bidirectional Zotero item relations.
+- Clickable citekey links for existing annotations.
+
+Each row shows the destination Zotero item and library where available. Untick any operation you want to leave for later. A removal that depends on a replacement remains blocked until the replacement is successfully positioned and selected.
+
+Warnings do not make changes. For example, if a citation key identifies multiple items in the same library, Kanzi reports the ambiguity instead of choosing one.
+
+### 3. Apply
+
+Select `Apply selected changes`. Only checked operations are written. Closing the manager or choosing `Cancel - no Zotero changes` leaves Zotero unchanged and keeps pending annotations available for a later run.
+
+Kanzi only performs automatic maintenance on annotations tagged `kindle-import`. It does not delete or rewrite ordinary annotations created manually in Zotero.
+
+### 4. Results
+
+The final result is one of:
+
+- **Completed:** all selected operations succeeded.
+- **Completed with issues:** safe operations completed, but specific items need attention.
+- **Failed:** the run could not be applied.
+
+Expand `Technical details` for exact counters and failure messages. Retrying is safe.
+
+## Resolve problems
+
+Open `Conflicts` when a title, attachment, or text position could not be resolved.
+
+- Expand a title to inspect its highlights and the original technical status.
+- Select a suggested Zotero item with `Use`.
+- Enter a citation key, Zotero key, or item ID with `Use Custom`.
+- Select `Ignore Title` if the document should never be imported.
+- Use `Copy` to copy unresolved highlight text for manual placement.
+- Use `Discard` to suppress a clipping permanently. Discards remain suppressed in every run mode, including `Recheck all clippings`.
+
+Saved choices live in `match-overrides.json` in Kanzi's runtime folder. The `Mappings` tab lists them and lets you delete a mapping so the title can be matched again.
+
+## Coloured highlights
+
+Place a colour code at the beginning of a Kindle highlight or its attached note. Kanzi strips the code before import.
+
+`[o] This is orange` becomes an orange highlight containing `This is orange`.
+
+| Code | Full name | Hex |
+|---|---|---|
+| `y` | `yellow` | `#ffd400` |
+| `o` | `orange` | `#ff8c00` |
+| `r` | `red` | `#ff6666` |
+| `e` | `grey` or `gray` | `#8a8a8a` |
+| `g` | `green` | `#5fb236` |
+| `b` | `blue` | `#2ea8e5` |
+| `p` | `purple` | `#a28ae5` |
+| `m` | `magenta` or `pink` | `#e56eee` |
+
+Short and full names are case-insensitive. Edit the mapping under `Settings -> Highlight colours`.
+
+## Citekey references
+
+A Kindle highlight or note can refer to another Zotero item with `@citekey`.
+
+- Kanzi appends a clickable `zotero://select/...` link to the annotation comment.
+- If both parent items are in the same Zotero library, Kanzi can add a bidirectional native Related relation after review.
+- Zotero cannot create native relations across libraries. In that case the clickable comment link is used instead.
+- If duplicate citation keys remain ambiguous after preferring the source library, Kanzi warns and creates no guessed relation.
+
+## Important limitations
+
+- Kindle provides clipping text, not a stable PDF or EPUB coordinate. Kanzi must find the text again in the attachment.
+- Scanned and OCR-derived PDFs can be slow or fail because their extracted text differs from the Kindle text.
+- PDF page labels can differ from physical PDF page indexes.
+- A linked web attachment is not a local PDF or EPUB. Attach the actual file to the Zotero item.
+- Cross-library native Zotero relations are not supported by Zotero.
+
+Unresolved entries remain visible and retryable rather than being silently marked as complete.
+
+## Data and privacy
+
+Annotation sharing is off by default. No AI service is involved in an import.
+
+If sharing is enabled under `Settings`, Kanzi sends a random pseudonymous installation ID, citation key and publication metadata, raw highlight text and comments, normalised and fuzzy hashes, colour, and dates to `annotation.utkubilen.de`. The collector does not receive your Zotero account identity, but free text can contain identifying information and is therefore not anonymous.
+
+## Technical behavior
+
+### Pipeline
+
+1. Parse and deduplicate `My Clippings.txt`.
+2. read Zotero items and attachments from a read-only SQLite connection.
+3. Match Kindle titles to Zotero items, applying saved overrides.
+4. Position EPUB highlights with CFI selectors.
+5. Position PDF highlights with Poppler page text and rectangles, including tolerant OCR matching.
+6. Build a writer plan and compare it with live Zotero state.
+7. Apply only explicitly approved operations through Zotero APIs.
+8. Reconcile the persistent ledger with successful writes and retryable failures.
+
+### Safety invariants
+
+- Preparing and reviewing are read-only with respect to Zotero.
+- A no-change plan performs no Zotero save.
+- A prior annotation is not removed unless its selected replacement exists or was successfully written.
+- Failed writes and deletions stay retryable.
+- Discard tombstones survive source disappearance and Full/Recheck runs.
+- Corrupt persistent state stops the import instead of being treated as empty.
+- Automatic maintenance is limited to `kindle-import` annotations.
+
+### Runtime files
+
+The manager's `Artifacts` tab opens or reveals generated plans. Important files include:
+
+- `import-plan.final.json`: cumulative annotation ledger and pending writer plan.
+- `import-plan.positioned.json`: positioning outcomes and technical statuses.
+- `match-overrides.json`: persistent title mappings and ignored titles.
+- `mismatch-review.md`: text report for unresolved entries.
+- `plugin-summary.json`: latest pipeline summary.
+
+These files are stored in Kanzi's private runtime folder inside the Zotero profile.
+
+## Development
+
+```sh
+python scripts/build_plugin.py
+python tests/run_tests.py
+node tests/test_manager_logic.js
+node --check plugin/bootstrap.js
+```
+
+The build produces `dist/kanzi.xpi` with the Python runtime included. The Python package requires 3.11 or newer and has no mandatory third-party Python dependencies.
+
+For the complete release verification matrix, see [`docs/testing-0.7.2.md`](docs/testing-0.7.2.md). Release notes are in [`docs/release-0.7.2.md`](docs/release-0.7.2.md).
+
+## Releases and support
+
+Stable releases attach `kanzi.xpi` and `updates.json` on [GitHub Releases](https://github.com/UtkuBilenDemir/kanzi/releases). Zotero checks `releases/latest/download/updates.json` for updates.
+
+Report problems or request features through [GitHub Issues](https://github.com/UtkuBilenDemir/kanzi/issues). Include the human-readable message, the original technical status, your operating system, Zotero version, and whether the attachment is PDF or EPUB.
+
+Kanzi is MIT-licensed.

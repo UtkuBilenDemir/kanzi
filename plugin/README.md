@@ -6,9 +6,9 @@ This is a hybrid Zotero plugin wrapper around the current Python importer. Zoter
 
 1. Install `kanzi.xpi` in Zotero through `Tools > Plugins`.
 2. Open `Tools > Kanzi...`.
-3. Select the updated Kindle `My Clippings.txt` in the manager.
-4. Follow the current stage, percentage, and elapsed time in the manager.
-5. Review created, existing, updated, failed, and unresolved counts when it completes.
+3. Choose Update, Retry unresolved, or Recheck all, then select the cumulative Kindle `My Clippings.txt`.
+4. Review every proposed annotation, maintenance, deletion, relation, and link operation.
+5. Apply the selected operations and inspect the Results summary.
 
 The XPI contains the importer Python source. On startup it extracts that source into the Zotero profile, where it keeps private mappings and generated audit artifacts. Python 3.11 or newer must be installed on the host; PDF positioning also requires Poppler (`pdftotext`, `pdftohtml`, and `pdfinfo`) and optionally uses `qpdf` for encrypted files. The plugin uses `match-overrides.json` there as the persistent source of title mappings and ignored titles.
 

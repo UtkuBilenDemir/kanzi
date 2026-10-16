@@ -7,12 +7,14 @@ from kindle_zotero_importer.cli import (
     _add_previous_imported_comments,
     _changed_note_clipping_ids,
     _changed_override_titles,
+    _build_deletion_candidates,
     _clipping_ids_for_titles,
     _deferred_clipping_ids,
     _deletion_ids,
     _discarded_clipping_ids,
     _merge_annotation_history,
     _merge_positioned_history,
+    _replacement_clipping_ids,
     _unresolved_clipping_ids,
 )
 from kindle_zotero_importer.clippings import clippings_to_jsonable, load_clippings
@@ -90,7 +92,7 @@ def test_deferred_clippings_are_reprocessed_while_they_remain_in_source():
 
 def test_discarded_clips_never_requeue_and_skips_are_not_unresolved():
     previous = {"discarded_clipping_ids": ["gone", "removed"]}
-    assert _discarded_clipping_ids(previous, {"gone", "current"}) == {"gone"}
+    assert _discarded_clipping_ids(previous) == {"gone", "removed"}
 
     plan = {
         "items": [
@@ -100,6 +102,103 @@ def test_discarded_clips_never_requeue_and_skips_are_not_unresolved():
         ]
     }
     assert _unresolved_clipping_ids(plan, {"note", "fail", "done"}) == {"fail"}
+
+
+def test_source_revision_deletion_depends_on_replacement():
+    previous_clippings = [
+        {
+            "id": "old",
+            "title": "Book",
+            "kind": "highlight",
+            "raw_detail": "- Highlight on page 10 | Added today",
+            "text": "short",
+        }
+    ]
+    current_clippings = [
+        {
+            "id": "new",
+            "title": "Book",
+            "kind": "highlight",
+            "raw_detail": "- Highlight on page 10 | Added today",
+            "text": "short and extended",
+        }
+    ]
+    assert _replacement_clipping_ids(previous_clippings, current_clippings) == {
+        "old": "new"
+    }
+    previous_plan = {
+        "all_annotations": [
+            {
+                "clipping_id": "old",
+                "clipping_title": "Book",
+                "attachment_item_id": 11,
+                "annotation": {"text": "short"},
+            }
+        ]
+    }
+    candidates = _build_deletion_candidates(
+        ["old"], previous_plan, previous_clippings, current_clippings, {"new"}
+    )
+    assert candidates[0]["replacement_clipping_id"] == "new"
+    assert candidates[0]["reason"] == "source-revision"
+    assert candidates[0]["blocked"] is False
+
+
+def test_deletion_is_blocked_until_replacement_is_positioned():
+    previous = {
+        "all_annotations": [{"clipping_id": "old", "annotation": {"text": "old"}}]
+    }
+    old = [{"id": "old", "title": "Book", "kind": "highlight", "raw_detail": "same"}]
+    new = [{"id": "new", "title": "Book", "kind": "highlight", "raw_detail": "same"}]
+    candidate = _build_deletion_candidates(["old"], previous, old, new, set())[0]
+    assert candidate["replacement_clipping_id"] == "new"
+    assert candidate["blocked"] is True
+
+
+def test_ambiguous_lineage_does_not_guess_replacement():
+    old = [{"id": "old", "title": "Book", "kind": "highlight", "raw_detail": "same"}]
+    current = [
+        {"id": "new-1", "title": "Book", "kind": "highlight", "raw_detail": "same"},
+        {"id": "new-2", "title": "Book", "kind": "highlight", "raw_detail": "same"},
+    ]
+    assert _replacement_clipping_ids(old, current) == {}
+    previous = {"all_annotations": [{"clipping_id": "old", "annotation": {}}]}
+    candidate = _build_deletion_candidates(
+        ["old"], previous, old, current, set()
+    )[0]
+    assert candidate["reason"] == "ambiguous-source-revision"
+    assert candidate["blocked"] is True
+
+
+def test_pending_replacement_dependency_survives_advanced_clipping_snapshot():
+    previous = {
+        "all_annotations": [{"clipping_id": "old", "annotation": {}}],
+        "pending_deletion_candidates": [{
+            "clipping_id": "old",
+            "replacement_clipping_id": "new",
+            "reason": "source-revision",
+        }],
+    }
+    current_snapshot = [
+        {"id": "new", "title": "Book", "kind": "highlight", "raw_detail": "same"}
+    ]
+    candidate = _build_deletion_candidates(
+        ["old"], previous, current_snapshot, current_snapshot, set()
+    )[0]
+    assert candidate["replacement_clipping_id"] == "new"
+    assert candidate["blocked"] is True
+
+
+def test_same_id_remap_is_blocked_when_current_positioning_fails():
+    previous = {
+        "all_annotations": [{"clipping_id": "same", "annotation": {}}]
+    }
+    clipping = [{"id": "same", "title": "Book", "kind": "highlight", "raw_detail": "same"}]
+    candidate = _build_deletion_candidates(
+        ["same"], previous, clipping, clipping, set()
+    )[0]
+    assert candidate["reason"] == "override-remap"
+    assert candidate["blocked"] is True
 
 
 def test_alternate_attachment_retry_prefers_pdf_when_epub_misses():
@@ -352,6 +451,111 @@ def test_noop_incremental_writes_complete_artifacts():
         assert result == 0
         final_plan = json.loads((workdir / "import-plan.final.json").read_text())
         assert final_plan["annotations"] == []
-        assert final_plan["all_annotations"] == [{**annotation, "related_items": []}]
+        assert final_plan["all_annotations"] == [{
+            **annotation,
+            "related_items": [],
+            "ambiguous_citekeys": [],
+        }]
         assert final_plan["delta_annotation_count"] == 0
         assert (workdir / "import-plan.epub.json").exists()
+
+
+def test_full_run_preserves_discard_tombstones():
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = Path(tmp)
+        source = workdir / "My Clippings.txt"
+        source.write_text(
+            "Book\n- Your Highlight on page 10 | Added on Monday, 6 October 2025 11:32:29\n\nDiscard me permanently\n==========\n",
+            encoding="utf-8",
+        )
+        clipping_id = load_clippings(str(source))[0].id
+        (workdir / "import-plan.final.json").write_text(
+            json.dumps({"discarded_clipping_ids": [clipping_id], "all_annotations": []}),
+            encoding="utf-8",
+        )
+
+        originals = (
+            cli.build_zotero_index,
+            cli.build_match_report,
+            cli.generate_override_skeleton,
+            cli.build_mismatch_review,
+        )
+        cli.build_zotero_index = lambda *_args: {"format": "index", "items": []}
+        cli.build_match_report = lambda payload, *_args: {
+            "format": "matches",
+            "matches": [],
+            "source_count": len(payload.get("clippings", [])),
+        }
+        cli.generate_override_skeleton = lambda *_args: {"format": "overrides", "overrides": []}
+        cli.build_mismatch_review = lambda *_args: "review\n"
+        try:
+            result = cli.main([
+                "run",
+                str(source),
+                "--workdir",
+                str(workdir),
+                "--db",
+                str(workdir / "zotero.sqlite"),
+                "--storage-root",
+                str(workdir / "storage"),
+                "--full",
+            ])
+        finally:
+            (
+                cli.build_zotero_index,
+                cli.build_match_report,
+                cli.generate_override_skeleton,
+                cli.build_mismatch_review,
+            ) = originals
+
+        assert result == 0
+        final_plan = json.loads((workdir / "import-plan.final.json").read_text())
+        assert final_plan["discarded_clipping_ids"] == [clipping_id]
+        assert final_plan["annotations"] == []
+        assert json.loads((workdir / "matches.json").read_text())["source_count"] == 0
+
+
+def test_corrupt_existing_state_fails_closed():
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = Path(tmp)
+        source = workdir / "My Clippings.txt"
+        source.write_text("", encoding="utf-8")
+        (workdir / "import-plan.final.json").write_text("{not json", encoding="utf-8")
+        try:
+            cli.main([
+                "run",
+                str(source),
+                "--workdir",
+                str(workdir),
+                "--db",
+                str(workdir / "zotero.sqlite"),
+                "--storage-root",
+                str(workdir / "storage"),
+            ])
+        except ValueError as error:
+            assert "Existing import state is unreadable" in str(error)
+        else:
+            raise AssertionError("corrupt state must stop the import")
+
+
+def test_structurally_invalid_existing_state_fails_closed():
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = Path(tmp)
+        source = workdir / "My Clippings.txt"
+        source.write_text("", encoding="utf-8")
+        (workdir / "import-plan.final.json").write_text("{}", encoding="utf-8")
+        try:
+            cli.main([
+                "run",
+                str(source),
+                "--workdir",
+                str(workdir),
+                "--db",
+                str(workdir / "zotero.sqlite"),
+                "--storage-root",
+                str(workdir / "storage"),
+            ])
+        except ValueError as error:
+            assert "Existing import state is unreadable" in str(error)
+        else:
+            raise AssertionError("structurally invalid state must stop the import")

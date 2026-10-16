@@ -45,6 +45,39 @@ def _load_colour_map(workdir: Path) -> dict[str, str] | None:
     return None
 
 
+def _validate_previous_final_plan(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("final plan must be a JSON object")
+    history = payload.get("all_annotations", payload.get("annotations"))
+    if not isinstance(history, list) or any(
+        not isinstance(entry, dict) or not entry.get("clipping_id")
+        for entry in history
+    ):
+        raise ValueError("final plan must contain an annotation history list")
+    for key in (
+        "discarded_clipping_ids",
+        "deferred_clipping_ids",
+        "delete_failed_ids",
+        "deletion_candidates",
+        "pending_deletion_candidates",
+    ):
+        if key in payload and not isinstance(payload[key], list):
+            raise ValueError(f"final plan field {key} must be a list")
+    return payload
+
+
+def _validate_previous_clippings(payload: object) -> list[dict]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("clippings"), list):
+        raise ValueError("clipping state must contain a clippings list")
+    clippings = payload["clippings"]
+    if any(
+        not isinstance(clipping, dict) or not clipping.get("id")
+        for clipping in clippings
+    ):
+        raise ValueError("every saved clipping must have an id")
+    return clippings
+
+
 def _merge_annotation_history(
     previous_plan: dict | None, current_annotations: list[dict], deletions: list[str]
 ) -> list[dict]:
@@ -78,11 +111,25 @@ def _refresh_history_relations(
     items_by_id = {item["item_id"]: item for item in zotero_index.get("items", [])}
     for entry in annotations:
         annotation = entry.get("annotation") or {}
+        parent = items_by_id.get(entry.get("parent_item_id")) or {}
+        parent_fields = parent.get("fields") or {}
+        for key, value in {
+            "parent_key": parent.get("key"),
+            "parent_title": parent.get("title"),
+            "library_id": parent.get("library_id"),
+            "group_id": parent.get("group_id"),
+            "citation_key": parent_fields.get("citationKey"),
+        }.items():
+            if entry.get(key) is None and value is not None:
+                entry[key] = value
+        ambiguous_citekeys: list[str] = []
         entry["related_items"] = _related_items_for_citekeys(
             (annotation.get("text") or "", annotation.get("comment") or ""),
             entry.get("parent_item_id"),
             items_by_id,
+            ambiguous_citekeys,
         )
+        entry["ambiguous_citekeys"] = ambiguous_citekeys
 
 
 def _changed_note_clipping_ids(
@@ -132,6 +179,143 @@ def _deletion_ids(
     return deleted
 
 
+def _clipping_lineage_key(clipping: dict) -> tuple:
+    """Stable source identity used only to pair old/new clipping revisions."""
+    raw_detail = clipping.get("raw_detail")
+    if raw_detail:
+        return (clipping.get("title"), clipping.get("kind"), raw_detail)
+    return (
+        clipping.get("title"),
+        clipping.get("kind"),
+        clipping.get("page"),
+        clipping.get("location"),
+        clipping.get("added_on_iso") or clipping.get("added_on"),
+    )
+
+
+def _replacement_clipping_ids(
+    previous_clippings: list[dict], current_clippings: list[dict]
+) -> dict[str, str]:
+    """Map an old clipping ID to one unambiguous current source revision."""
+    current_by_id = {clipping.get("id"): clipping for clipping in current_clippings}
+    current_by_lineage: dict[tuple, list[dict]] = {}
+    for clipping in current_clippings:
+        current_by_lineage.setdefault(_clipping_lineage_key(clipping), []).append(clipping)
+    replacements = {}
+    for previous in previous_clippings:
+        old_id = previous.get("id")
+        if not old_id:
+            continue
+        if old_id in current_by_id:
+            replacements[old_id] = old_id
+            continue
+        candidates = current_by_lineage.get(_clipping_lineage_key(previous), [])
+        if len(candidates) == 1 and candidates[0].get("id"):
+            replacements[old_id] = candidates[0]["id"]
+    return replacements
+
+
+def _build_deletion_candidates(
+    deletion_ids: list[str] | set[str],
+    previous_plan: dict | None,
+    previous_clippings: list[dict],
+    current_clippings: list[dict],
+    current_annotation_ids: set[str],
+) -> list[dict]:
+    """Describe deletions and their replacement dependency for review."""
+    previous_annotations = {
+        entry.get("clipping_id"): entry
+        for entry in (
+            (previous_plan or {}).get("all_annotations")
+            or (previous_plan or {}).get("annotations", [])
+        )
+        if entry.get("clipping_id")
+    }
+    previous_by_id = {
+        clipping.get("id"): clipping
+        for clipping in previous_clippings
+        if clipping.get("id")
+    }
+    replacements = _replacement_clipping_ids(previous_clippings, current_clippings)
+    current_ids = {
+        clipping.get("id") for clipping in current_clippings if clipping.get("id")
+    }
+    current_by_lineage: dict[tuple, list[dict]] = {}
+    for clipping in current_clippings:
+        current_by_lineage.setdefault(_clipping_lineage_key(clipping), []).append(
+            clipping
+        )
+    prior_candidates = {
+        candidate.get("clipping_id"): candidate
+        for key in ("deletion_candidates", "pending_deletion_candidates")
+        for candidate in (previous_plan or {}).get(key, [])
+        if candidate.get("clipping_id")
+    }
+    previous_failures = set((previous_plan or {}).get("delete_failed_ids", []))
+    previous_integrated_ids = set(previous_annotations)
+    candidates = []
+    for clipping_id in sorted(set(deletion_ids)):
+        previous = previous_annotations.get(clipping_id, {})
+        source = previous_by_id.get(clipping_id, {})
+        replacement_id = replacements.get(clipping_id)
+        prior_candidate = prior_candidates.get(clipping_id, {})
+        prior_replacement_id = prior_candidate.get("replacement_clipping_id")
+        if (
+            not replacement_id
+            and prior_replacement_id
+            and (
+                prior_replacement_id in current_ids
+                or prior_replacement_id in previous_integrated_ids
+            )
+        ):
+            replacement_id = prior_replacement_id
+        ambiguous_revision = bool(
+            source
+            and clipping_id not in current_ids
+            and len(current_by_lineage.get(_clipping_lineage_key(source), [])) > 1
+        )
+        if clipping_id in previous_failures:
+            reason = "retry"
+        elif ambiguous_revision:
+            reason = "ambiguous-source-revision"
+        elif replacement_id == clipping_id:
+            reason = "override-remap"
+        elif replacement_id:
+            reason = "source-revision"
+        else:
+            reason = "source-removed"
+        annotation = previous.get("annotation") or {}
+        candidates.append(
+            {
+                "candidate_id": f"delete:{clipping_id}",
+                "clipping_id": clipping_id,
+                "clipping_title": previous.get("clipping_title")
+                or source.get("title")
+                or "",
+                "text": annotation.get("text") or source.get("text") or "",
+                "attachment_item_id": previous.get("attachment_item_id"),
+                "parent_item_id": previous.get("parent_item_id"),
+                "citation_key": previous.get("citation_key"),
+                "reason": reason,
+                "replacement_clipping_id": replacement_id,
+                "blocked": bool(
+                    ambiguous_revision
+                    or (
+                        replacement_id == clipping_id
+                        and replacement_id not in current_annotation_ids
+                    )
+                    or (
+                        replacement_id
+                        and replacement_id != clipping_id
+                        and replacement_id not in current_annotation_ids
+                        and replacement_id not in previous_integrated_ids
+                    )
+                ),
+            }
+        )
+    return candidates
+
+
 def _deferred_clipping_ids(
     previous_plan: dict | None, current_ids: set[str]
 ) -> set[str]:
@@ -142,14 +326,12 @@ def _deferred_clipping_ids(
     }
 
 
-def _discarded_clipping_ids(
-    previous_plan: dict | None, current_ids: set[str]
-) -> set[str]:
+def _discarded_clipping_ids(previous_plan: dict | None) -> set[str]:
     """Clips the user permanently discarded in Conflicts (e.g. standalone notes)."""
     return {
-        clipping_id
+        str(clipping_id)
         for clipping_id in (previous_plan or {}).get("discarded_clipping_ids", [])
-        if clipping_id in current_ids
+        if clipping_id
     }
 
 
@@ -646,28 +828,36 @@ def main(argv: list[str] | None = None) -> int:
         prev_integrated_ids: set[str] = set()
         prev_final_plan = None
         prev_positioned_plan = None
+        previous_clippings: list[dict] = []
         prev_final_path = artifact("import-plan.final.json")
         if prev_final_path.exists():
             try:
-                prev_final_plan = load_json(str(prev_final_path))
+                prev_final_plan = _validate_previous_final_plan(
+                    load_json(str(prev_final_path))
+                )
                 previous_annotations = prev_final_plan.get("all_annotations") or prev_final_plan.get("annotations", [])
                 prev_integrated_ids = {a.get("clipping_id") for a in previous_annotations if a.get("clipping_id")}
-            except Exception:
-                prev_final_plan = None
-                prev_integrated_ids = set()
+            except Exception as error:
+                raise ValueError(
+                    f"Existing import state is unreadable: {prev_final_path}. "
+                    "Restore the file from backup or move it aside before importing."
+                ) from error
+        prev_clippings_path = artifact("clippings.json")
+        if prev_clippings_path.exists():
+            try:
+                previous_clippings = _validate_previous_clippings(
+                    load_json(str(prev_clippings_path))
+                )
+                prev_clippings_ids = {c["id"] for c in previous_clippings}
+                prev_effective_ids = {
+                    c["id"] for c in _attach_notes_to_highlights(previous_clippings)
+                }
+            except Exception as error:
+                raise ValueError(
+                    f"Existing clipping state is unreadable: {prev_clippings_path}."
+                ) from error
         if is_incremental:
-            prev_clippings_path = artifact("clippings.json")
             prev_positioned_path = artifact("import-plan.positioned.json")
-            if prev_clippings_path.exists():
-                try:
-                    previous_clippings = load_json(str(prev_clippings_path)).get("clippings", [])
-                    prev_clippings_ids = {c["id"] for c in previous_clippings}
-                    prev_effective_ids = {
-                        c["id"] for c in _attach_notes_to_highlights(previous_clippings)
-                    }
-                except Exception:
-                    prev_clippings_ids = set()
-                    prev_effective_ids = set()
             if prev_positioned_path.exists():
                 try:
                     prev_positioned_plan = load_json(str(prev_positioned_path))
@@ -677,10 +867,28 @@ def main(argv: list[str] | None = None) -> int:
             if not prev_clippings_ids and not prev_integrated_ids:
                 is_incremental = False
 
+        discarded_ids = _discarded_clipping_ids(prev_final_plan)
+        processable_source_clippings = [
+            clipping
+            for clipping in source_clippings
+            if clipping.get("id") not in discarded_ids
+        ]
+        processable_effective_clippings = _attach_notes_to_highlights(
+            processable_source_clippings
+        )
+        processable_ids = {
+            clipping["id"] for clipping in processable_effective_clippings
+        }
+        processable_clippings = {
+            "format": new_clippings.get("format"),
+            "count": len(processable_source_clippings),
+            "clippings": processable_source_clippings,
+        }
+
         if is_incremental:
             # Only source entries not seen on the preceding run need positioning.
             # Previously unresolved entries are re-queued when their override changes.
-            to_process_ids = set(new_ids - prev_effective_ids)
+            to_process_ids = set(processable_ids - prev_effective_ids)
             # Deletions: previously integrated but now absent (removed or changed text)
             deletions_ids = _deletion_ids(prev_integrated_ids, new_ids, prev_final_plan)
             # Also re-queue any previously integrated clippings whose title now has an override
@@ -695,18 +903,22 @@ def main(argv: list[str] | None = None) -> int:
                 (prev_final_plan or {}).get("overrides_snapshot"), _ov_for_inc
             )
             to_process_ids.update(
-                _clipping_ids_for_titles(effective_clippings, changed_override_titles)
+                _clipping_ids_for_titles(
+                    processable_effective_clippings, changed_override_titles
+                )
             )
             previous_annotations = (prev_final_plan or {}).get("all_annotations") or (prev_final_plan or {}).get("annotations", [])
             for annotation in previous_annotations:
                 if annotation.get("clipping_title") in changed_override_titles and annotation.get("clipping_id"):
                     deletions_ids.add(annotation["clipping_id"])
             newly_added_source_ids = source_ids - prev_clippings_ids
-            for c in effective_clippings:
+            for c in processable_effective_clippings:
                 if set(c.get("note_ids", [])) & newly_added_source_ids:
                     to_process_ids.add(c["id"])
             to_process_ids.update(
-                _changed_note_clipping_ids(effective_clippings, previous_annotations)
+                _changed_note_clipping_ids(
+                    processable_effective_clippings, previous_annotations
+                )
             )
             to_process_ids.update(
                 clipping_id
@@ -718,10 +930,6 @@ def main(argv: list[str] | None = None) -> int:
                 to_process_ids.update(
                     _unresolved_clipping_ids(prev_positioned_plan, new_ids)
                 )
-            # Permanently discarded clips (user action in Conflicts) never re-queue.
-            to_process_ids.difference_update(
-                _discarded_clipping_ids(prev_final_plan, new_ids)
-            )
             # If colourMap itself changed since last run, re-queue all prev integrated (so Settings change recolours)
             try:
                 prev_map = (prev_final_plan or {}).get("colourMap") or (prev_final_plan or {}).get("colorMap")
@@ -732,6 +940,8 @@ def main(argv: list[str] | None = None) -> int:
                     to_process_ids.update(prev_integrated_ids)
             except Exception:
                 pass
+            # Permanent tombstones are the final filter after every requeue source.
+            to_process_ids.difference_update(discarded_ids)
             deletions_ids = sorted(deletions_ids)
             # Also handle deleted overrides: if a previously integrated title's override was deleted,
             # its annotations should be deleted. Detect via previous final plan's titles vs current overrides.
@@ -744,7 +954,11 @@ def main(argv: list[str] | None = None) -> int:
             # handled as not in to_process_ids? Actually it is still in new_ids, but we re-queued it above only if title in overrides.
             # For now, rely on full re-import for deleted-override cleanup.
             # Build filtered clippings for this delta run
-            filtered_list = [c for c in effective_clippings if c["id"] in to_process_ids]
+            filtered_list = [
+                c
+                for c in processable_effective_clippings
+                if c["id"] in to_process_ids
+            ]
             # If nothing to do and no deletions, still need to report but skip expensive steps
             if not filtered_list and not deletions_ids:
                 report_progress(15, "Matching titles", "No new highlights — incremental skip")
@@ -754,7 +968,9 @@ def main(argv: list[str] | None = None) -> int:
                 if overrides_path.exists():
                     overrides = load_overrides(load_json(str(overrides_path)))
                 clippings = new_clippings
-                matches = build_match_report(clippings, zotero_index, overrides)
+                matches = build_match_report(
+                    processable_clippings, zotero_index, overrides
+                )
                 override_skeleton = generate_override_skeleton(matches)
                 plan = {"format": "kindle-zotero-importer.import-plan.v1", "items": []}
                 epub_plan = {"format": plan["format"], "items": []}
@@ -813,10 +1029,14 @@ def main(argv: list[str] | None = None) -> int:
                 overrides = load_overrides(load_json(str(overrides_path)))
             clippings = new_clippings
             report_progress(15, "Matching titles", "Matching Kindle titles to Zotero items")
-            matches = build_match_report(clippings, zotero_index, overrides)
+            matches = build_match_report(
+                processable_clippings, zotero_index, overrides
+            )
             override_skeleton = generate_override_skeleton(matches)
             report_progress(22, "Building plan", "Selecting attachments")
-            plan = build_import_plan(clippings, zotero_index, matches, colour_map)
+            plan = build_import_plan(
+                processable_clippings, zotero_index, matches, colour_map
+            )
             report_progress(30, "Positioning EPUB highlights", "Locating highlights in EPUB files")
             epub_plan = add_epub_positions(plan)
             report_progress(55, "Positioning PDF highlights", "Locating highlights in PDF files; this is usually the longest stage")
@@ -824,9 +1044,22 @@ def main(argv: list[str] | None = None) -> int:
             positioned_plan = _reattempt_failed_with_alternate_attachments(positioned_plan)
             report_progress(90, "Finalizing", "Preparing Zotero annotations and mismatch report")
             final_plan = build_final_writer_plan(positioned_plan)
-            final_plan["deletions"] = sorted(
-                _deletion_ids(prev_integrated_ids, new_ids, prev_final_plan)
+            full_deletion_ids = _deletion_ids(
+                prev_integrated_ids, new_ids, prev_final_plan
             )
+            changed_override_titles = _changed_override_titles(
+                (prev_final_plan or {}).get("overrides_snapshot"), overrides or {}
+            )
+            for annotation in (
+                (prev_final_plan or {}).get("all_annotations")
+                or (prev_final_plan or {}).get("annotations", [])
+            ):
+                if (
+                    annotation.get("clipping_title") in changed_override_titles
+                    and annotation.get("clipping_id")
+                ):
+                    full_deletion_ids.add(annotation["clipping_id"])
+            final_plan["deletions"] = sorted(full_deletion_ids)
             final_plan["is_incremental"] = False
             final_plan["colourMap"] = colour_map if colour_map is not None else DEFAULT_COLOUR_MAP
             final_plan["colorMap"] = final_plan["colourMap"]
@@ -834,14 +1067,28 @@ def main(argv: list[str] | None = None) -> int:
 
         if is_incremental:
             positioned_plan = _merge_positioned_history(
-                prev_positioned_plan, positioned_plan, new_ids
+                prev_positioned_plan, positioned_plan, processable_ids
             )
-            matches = build_match_report(new_clippings, zotero_index, overrides)
+            matches = build_match_report(
+                processable_clippings, zotero_index, overrides
+            )
             override_skeleton = generate_override_skeleton(matches)
             mismatch_review = build_mismatch_review(positioned_plan, matches)
 
         _add_previous_imported_comments(
             final_plan.get("annotations", []), prev_final_plan
+        )
+
+        final_plan["deletion_candidates"] = _build_deletion_candidates(
+            final_plan.get("deletions", []),
+            prev_final_plan,
+            previous_clippings,
+            effective_clippings,
+            {
+                entry.get("clipping_id")
+                for entry in final_plan.get("annotations", [])
+                if entry.get("clipping_id")
+            },
         )
 
         delta_annotation_count = len(final_plan.get("annotations", []))
@@ -862,9 +1109,7 @@ def main(argv: list[str] | None = None) -> int:
         final_plan["delta_annotation_count"] = delta_annotation_count
         final_plan["processed_clipping_ids"] = sorted(new_ids)
         final_plan["overrides_snapshot"] = overrides or {}
-        final_plan["discarded_clipping_ids"] = sorted(
-            _discarded_clipping_ids(prev_final_plan, new_ids)
-        )
+        final_plan["discarded_clipping_ids"] = sorted(discarded_ids)
 
         indent = 2 if args.pretty else None
         outputs = {
